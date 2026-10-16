@@ -6,3 +6,4 @@ artifacts/
 manager/SeedPackages/
 .vs/
 *.user
+local-mod-archive/

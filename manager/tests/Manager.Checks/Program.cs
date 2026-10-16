@@ -1,7 +1,6 @@
 using System.IO.Compression;
 using ScheduleI.Manager;
 
-if (args.Length < 1) throw new ArgumentException("Pass the Businesses ZIP path, and optionally the real game folder and pinned MelonLoader ZIP.");
 var root = Path.Combine(Path.GetTempPath(), "ScheduleIModManager-checks-" + Guid.NewGuid().ToString("N"));
 Directory.CreateDirectory(root);
 var count = 0;
@@ -20,9 +19,18 @@ try
     var detected = GameDetector.Detect(folder);
     Check(detected.Version == "0.4.7f5" && detected.Backend == "IL2CPP", "detect installed version and backend from game files");
     var game = detected with { LoaderVersion = "0.7.3", RuntimeInstalled = true };
-    var package = ModLibrary.Import(args[0], library);
-    Check(package.Manifest.Name == "Businesses" && package.Manifest.Version == "0.1.3", "import actual Businesses package");
-    Check(ModLibrary.Import(args[0], library).Sha256 == package.Sha256 && ModLibrary.List(library).Count == 1, "repeat import is idempotent");
+    // A harmless PE fixture exercises copying and hashing without loading mod or game code.
+    var fixture = Path.Combine(root, "FixturePackage");
+    Directory.CreateDirectory(Path.Combine(fixture, "Mods"));
+    File.Copy(typeof(ModLibrary).Assembly.Location, Path.Combine(fixture, "Mods", "FixtureMod.dll"));
+    JsonFiles.Write(Path.Combine(fixture, "manifest.json"), new PackageManifest { Name = "FixtureMod", Version = "0.0.1", Dependencies = ["LavaGang-MelonLoader-0.7.3"] });
+    JsonFiles.Write(Path.Combine(fixture, "compatibility.json"), new Compatibility { Game = "Schedule I", GameVersions = ["0.4.7f5"], Backend = "IL2CPP", Platforms = ["Windows x64"], Loader = new() { Name = "MelonLoader", Versions = ["0.7.3"] } });
+    var fixtureZip = Path.Combine(root, "fixture.zip");
+    ZipFile.CreateFromDirectory(fixture, fixtureZip);
+    var packageZip = args.Length > 0 ? args[0] : fixtureZip;
+    var package = ModLibrary.Import(packageZip, library);
+    Check(args.Length > 0 || (package.Manifest.Name == "FixtureMod" && package.Manifest.Version == "0.0.1"), "import local package without game or mod dependencies");
+    Check(ModLibrary.Import(packageZip, library).Sha256 == package.Sha256 && ModLibrary.List(library).Count == 1, "repeat import is idempotent");
     Reject(() => ModLibrary.ValidateLibraryLocation(Path.Combine(folder, "Mods"), folder), "reject library nested in game");
     Reject(() => ModLibrary.ValidateLibraryLocation(root, folder), "reject library containing game");
     var unsafeZip = Path.Combine(root, "unsafe.zip");
@@ -60,7 +68,7 @@ try
     {
         var real = GameDetector.Detect(args[1]);
         Check(real.Version == "0.4.7f5" && real.Backend == "IL2CPP" && real.LoaderVersion == "0.7.3" && real.RuntimeInstalled, "real installation version, backend, loader and runtime detection");
-        Check(ModDeployment.CompatibilityIssue(real, package) == "", "actual installed game matches bundled mod");
+        Check(ModDeployment.CompatibilityIssue(real, package) == "", "actual installed game matches imported mod");
         Console.WriteLine("REAL GAME STATUS (read only): " + ModDeployment.Status(real, package));
         if (GameDetector.IsRunning(real))
         {
@@ -74,10 +82,10 @@ try
             try
             {
                 ModDeployment.Disable(real, package);
-                Check(ModDeployment.Status(real, package) == "Disabled", "disable Businesses in actual game folder");
+                Check(ModDeployment.Status(real, package) == "Disabled", "disable managed mod in actual game folder");
             }
             finally { ModDeployment.Enable(real, package); }
-            Check(ModDeployment.Status(real, package) == "Enabled" && ModLibrary.Hash(Path.Combine(real.Folder, "Mods", package.FileName)) == package.Sha256, "re-enable actual Businesses DLL with identical checksum");
+            Check(ModDeployment.Status(real, package) == "Enabled" && ModLibrary.Hash(Path.Combine(real.Folder, "Mods", package.FileName)) == package.Sha256, "re-enable actual mod DLL with identical checksum");
         }
     }
     if (args.Length > 2)

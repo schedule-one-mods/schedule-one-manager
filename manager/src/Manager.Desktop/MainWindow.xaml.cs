@@ -17,6 +17,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        VersionLabel.Text = "PROTOTYPE  " + (typeof(MainWindow).Assembly.GetName().Version?.ToString(3) ?? "Unknown");
         Loaded += async (_, _) => await Run(async () =>
         {
             if (File.Exists(ManagerSettings.FilePath)) settings = JsonFiles.Read<ManagerSettings>(ManagerSettings.FilePath);
@@ -24,8 +25,6 @@ public partial class MainWindow : Window
             GamePath.Text = settings.GameFolder;
             LibraryPath.Text = settings.LibraryFolder;
             if (!string.IsNullOrWhiteSpace(settings.GameFolder)) ModLibrary.ValidateLibraryLocation(settings.LibraryFolder, settings.GameFolder);
-            var seed = Path.Combine(AppContext.BaseDirectory, "SeedPackages");
-            if (Directory.Exists(seed)) foreach (var zip in Directory.GetFiles(seed, "*.zip")) ModLibrary.Import(zip, settings.LibraryFolder);
             SavePaths();
             Reload();
             await Task.CompletedTask;

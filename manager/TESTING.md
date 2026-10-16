@@ -1,30 +1,21 @@
-# Prototype validation
+# Validation
 
-Tested locally on Windows x64 against Schedule I **0.4.7f5 / IL2CPP**, MelonLoader **0.7.3**, Businesses **0.1.3**.
+## Automated release checks
 
-## Automated checks
+`manager/build.ps1 -Installer` runs 23 checks using a temporary package assembled from a harmless local test PE file and generated manifest/compatibility metadata. It never loads that file as a mod and needs no installed game, Businesses code, or MelonLoader archive.
 
-`manager/build.ps1` runs `Manager.Checks` against disposable directories, the actual Businesses ZIP and the actual pinned loader ZIP. Checks cover import, repeat import, ZIP traversal rejection and staging cleanup, separate folder enforcement, version/backend/loader/runtime compatibility, enable/disable/adoption, ownership and checksum conflicts, launch validation, and loader extraction without overwriting existing files. Real game detection is read only. When the game is running, two additional checks verify that enable/disable calls refuse to modify it (30 total).
+Checks cover installed version/backend parsing, package import and duplicate import, ZIP traversal and cleanup, separate library location enforcement, compatibility rejection, enable/disable/adoption, ownership and checksum conflicts, and compatibility validation before launch. All fixture files are removed afterwards.
 
-For an optional real installation round trip, first adopt Businesses in the app and close the game, then run:
+The release verifier checks the expected versioned asset filenames, SHA-256 checksums, readable portable ZIP contents and an exact manager-only allowlist. Seed mod ZIPs and game files cause verification to fail.
 
-```powershell
-.\tools\dotnet\dotnet.exe run --project .\manager\tests\Manager.Checks -c Release -- .\artifacts\releases\Businesses-0.1.3-IL2CPP.zip 'Q:\Games\Schedule I' .\tools\MelonLoader.x64.0.7.3.zip --exercise-real
-```
+GitHub Actions runs these checks and builds the MSI/ZIP on a hosted Windows runner. The workflow itself cannot be exercised remotely until these uncommitted changes are pushed to a GitHub repository.
 
-That explicitly disables and re-enables the already managed identical Businesses DLL. Its final checksum must match the library. The default build never runs this mutating test.
+## Earlier local integration validation (0.1.0)
 
-## Desktop validation performed
+The original manager prototype was installed using Windows Installer (exit 0), detected Schedule I 0.4.7f5 / IL2CPP with MelonLoader 0.7.3, adopted the identical Businesses 0.1.3 DLL, and launched the game with that mod. The loader log confirmed the expected mod checksum. Running-game mutation guards passed. Actual loader extraction was checked in a disposable folder using the checksum-pinned official archive.
 
-- Built the self-contained Windows x64 EXE, portable ZIP and MSI.
-- Installed the per-user MSI with Windows Installer (exit 0), launched its installed EXE and checked that it matched the published binary.
-- First-run import populated the library with Businesses 0.1.3.
-- Auto-detection found another Steam installation, 0.4.7f12, and marked it unverified for this mod.
-- Changed the game folder to Q:/Games/Schedule I, saved it, and detected 0.4.7f5, IL2CPP, MelonLoader 0.7.3 and the existing .NET 6 Desktop Runtime.
-- Adopted the identical manually installed Businesses DLL using the desktop button.
-- Clicked Play in the manager; the selected game executable started, and the new MelonLoader log reported Businesses v0.1.3 with SHA-256 `9A528E50CF942EFC7BE68178244C3713077113ACA5B47B403266DB5CB0CD0898`.
-- Confirmed the game reached gameplay and manager launch/mutation guards detected its running process.
+Version 0.1.1 removes automatic seed import and the dependency on that mod for builds/tests. Existing user libraries and installed game mods remain untouched. Businesses is being separated into its own repository.
 
 ## Remaining release testing
 
-The machine already had the game dependencies installed. Actual loader ZIP provisioning was tested in a disposable game folder; the runtime installer download/elevation workflow and a completely fresh game's first interop-generation launch still need a clean Windows test. Co-op, long gameplay sessions, public code signing, and other game builds are unverified. This prototype has no GitHub catalog or automatic update client yet.
+A clean machine still needs testing for the dependency download/elevation workflow and a fresh game's first interop-generation launch. Co-op, long gameplay sessions, other game builds and public code signing are unverified. Hosted release publication awaits the first remote workflow run.
