@@ -51,7 +51,7 @@
                         <DataGridTextColumn Header="Mod" Binding="{Binding Name}" Width="1.2*"/>
                         <DataGridTextColumn Header="Version" Binding="{Binding Version}" Width="80"/>
                         <DataGridTextColumn Header="Status / compatibility" Binding="{Binding Status}" Width="2.8*"><DataGridTextColumn.ElementStyle><Style TargetType="TextBlock"><Setter Property="TextWrapping" Value="Wrap"/></Style></DataGridTextColumn.ElementStyle></DataGridTextColumn>
-                        <DataGridTemplateColumn Header="" Width="105"><DataGridTemplateColumn.CellTemplate><DataTemplate><Button Content="{Binding Action}" IsEnabled="{Binding CanToggle}" Tag="{Binding Package}" Click="ToggleMod" Padding="12,7" Margin="0"/></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
+                        <DataGridTemplateColumn Header="Next launch" Width="125"><DataGridTemplateColumn.CellTemplate><DataTemplate><Button Content="{Binding Action}" IsEnabled="{Binding CanToggle}" Tag="{Binding Package}" Click="ToggleMod" Padding="12,7" Margin="0"/></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
                     </DataGrid.Columns>
                 </DataGrid>
                     </StackPanel></TabItem>

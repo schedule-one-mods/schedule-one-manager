@@ -52,7 +52,8 @@ public sealed class DependencySetupService : IDisposable
                 GameDetector.RequireStopped(detect(folder));
                 cancellation.ThrowIfCancellationRequested();
                 Report(new($"Installing {artifact.Name}. Windows may ask for administrator approval. Complete or cancel the Windows installer to continue.", CanCancel: false));
-                var nativeLog = logPath + "." + Path.GetFileNameWithoutExtension(artifact.FileName) + ".installer.log";
+                // Leave room for the bootstrapper's package and rollback log suffixes.
+                var nativeLog = Path.Combine(logs, Path.GetFileNameWithoutExtension(logPath) + (isVisualCpp ? ".vc.log" : ".net6.log"));
                 log.WriteLine("Windows installer log: " + nativeLog);
                 var exitCode = await installMicrosoft(installer, artifact.Name, nativeLog);
                 log.WriteLine($"{DateTimeOffset.Now:O} {artifact.Name} installer exit code: {exitCode}");
@@ -63,6 +64,7 @@ public sealed class DependencySetupService : IDisposable
                     Report(new("Windows restart required. Restart the computer, then run Install missing requirements again.", 100));
                     return new(status, true, logPath);
                 }
+                if (exitCode == 1622) throw new IOException($"{artifact.Name}: Windows Installer could not open its installation log (exit 1622). Open the setup log to view installer details, then retry setup. Installer log: {nativeLog}");
                 if (exitCode != 0) throw new IOException($"{artifact.Name} installer failed (exit {exitCode}). Open the setup log for details.");
                 status = status with { Game = detect(folder) };
                 if (!(isVisualCpp ? status.Game.VisualCppInstalled : status.Game.RuntimeInstalled)) throw new IOException($"{artifact.Name} installer finished, but the required x64 runtime was not detected. Restart Windows and recheck requirements.");
@@ -101,14 +103,25 @@ public sealed class DependencySetupService : IDisposable
     {
         try
         {
-            var info = new ProcessStartInfo(file) { UseShellExecute = true, Verb = "runas" };
-            foreach (var argument in new[] { "/install", "/passive", "/norestart", "/log", log }) info.ArgumentList.Add(argument);
+            var info = MicrosoftInstallerStartInfo(file, log);
             using var process = await Task.Run(() => Process.Start(info) ?? throw new IOException("Could not start " + name));
             // Once Windows Installer starts, wait for its result; never kill a system installation on cancellation.
             await process.WaitForExitAsync();
             return process.ExitCode;
         }
         catch (Win32Exception exception) when (exception.NativeErrorCode == 1223) { throw new OperationCanceledException("Administrator approval was cancelled. No further requirements were installed.", exception); }
+    }
+    internal static ProcessStartInfo MicrosoftInstallerStartInfo(string file, string log)
+    {
+        // Microsoft's bootstrapper requests elevation for its machine-wide packages itself.
+        // ShellExecute's runas path can fail before the existing installer even starts.
+        var info = new ProcessStartInfo(Path.GetFullPath(file))
+        {
+            UseShellExecute = false,
+            WorkingDirectory = Path.GetDirectoryName(Path.GetFullPath(file))!
+        };
+        foreach (var argument in new[] { "/install", "/passive", "/norestart", "/log", log }) info.ArgumentList.Add(argument);
+        return info;
     }
     private sealed class InlineProgress(Action<SetupProgress> report) : IProgress<SetupProgress> { public void Report(SetupProgress value) => report(value); }
     public void Dispose() => downloader.Dispose();

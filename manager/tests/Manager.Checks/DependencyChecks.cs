@@ -7,6 +7,21 @@ internal static class DependencyChecks
 {
     public static async Task Run(string root, Action<bool, string> check)
     {
+        var installerPath = Path.Combine(root, "Downloads with spaces", "desktop.exe");
+        var installerLog = Path.Combine(root, "Logs with spaces", "native installer.log");
+        var launch = DependencySetupService.MicrosoftInstallerStartInfo(installerPath, installerLog);
+        check(!launch.UseShellExecute && string.IsNullOrEmpty(launch.Verb) && launch.FileName == installerPath && launch.WorkingDirectory == Path.GetDirectoryName(installerPath), "Microsoft bootstrapper starts directly from its download directory and handles its own elevation");
+        check(launch.ArgumentList.SequenceEqual(new[] { "/install", "/passive", "/norestart", "/log", installerLog }), "Microsoft installer arguments preserve log paths with spaces and prevent automatic reboot");
+        var logFolder = Path.Combine(root, "Viewer logs");
+        Directory.CreateDirectory(logFolder);
+        var mainLog = Path.Combine(logFolder, "setup-20261016-232140-166d4f79.log");
+        var childLog = Path.Combine(logFolder, "setup-20261016-232140-166d4f79.net6_000_runtime.msi.log");
+        File.WriteAllText(mainLog, "setup status");
+        File.WriteAllText(childLog, "native details");
+        check(SetupLogs.Latest(logFolder) == mainLog, "reopened manager selects the setup log instead of a native MSI child log");
+        check(SetupLogs.Related(mainLog).Order().SequenceEqual(new[] { mainLog, childLog }.Order()), "log viewer includes the setup and native installer logs for its session");
+        using (var activeLog = new FileStream(mainLog, FileMode.Open, FileAccess.Write, FileShare.Read))
+            check(SetupLogs.Read(mainLog) == "setup status", "log viewer can read a setup log while installation still has it open");
         async Task<Exception> Reject(Func<Task> action, string name)
         {
             try { await action(); }
@@ -89,6 +104,12 @@ internal static class DependencyChecks
             check(File.ReadAllText(first) == "old invalid cache" && !Directory.GetFiles(fixture.Cache, "*.tmp").Any(), "failed download keeps cache and removes temporary payload");
             fixture.Payloads[fixture.Dotnet.Url] = new byte[1];
             await Reject(async () => await fixture.Downloader.Get(fixture.Dotnet), "truncated dependency size is rejected");
+        }
+        using (var fixture = new Fixture(root))
+        {
+            fixture.ExitCodes.Enqueue(1622);
+            var exception = await Reject(async () => await fixture.Service.Setup(fixture.Folder), "Windows Installer log failure is handled separately");
+            check(exception.Message.Contains("could not open its installation log") && File.Exists((string)exception.Data["SetupLogPath"]!), "1622 retains an accessible setup log and explains the native log failure");
         }
         using (var fixture = new Fixture(root))
         {

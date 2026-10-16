@@ -2,7 +2,7 @@
 
 ## Automated checks for 0.1.3
 
-`manager/build.ps1 -Installer` runs 89 offline checks using a temporary PE fixture and fake HTTP responses. No game, Businesses source or real network access is required in CI. Checks cover local package import, ZIP traversal, compatibility, enable/disable/adoption, file ownership, changed DLL conflicts and launch validation, plus registry parsing, unsupported schema, duplicate identities, repository/tag URL binding, HTTP failures, API fallback, insecure redirects, index size limits, download SHA-256/size, package identity/compatibility mismatches, cancellation and temporary-file cleanup.
+`manager/build.ps1 -Installer` runs 96 offline checks using a temporary PE fixture and fake HTTP responses. No game, Businesses source or real network access is required in CI. Checks cover local package import, ZIP traversal, compatibility, enable/disable/adoption, file ownership, changed DLL conflicts and launch validation, plus registry parsing, unsupported schema, duplicate identities, repository/tag URL binding, HTTP failures, API fallback, insecure redirects, index size limits, download SHA-256/size, package identity/compatibility mismatches, cancellation and temporary-file cleanup.
 
 `manager/verify-release.ps1` verifies versioned release asset filenames and SHA-256 files, reads all ZIP entries, and enforces an exact manager-only file allowlist. No mod or game binaries are bundled.
 
@@ -47,3 +47,15 @@ The original manager was installed with Windows Installer (exit 0), detected Sch
 ## Remaining testing
 
 A clean Windows VM still needs acceptance testing for real Microsoft runtime installation/elevation, reboot handling and first interop generation. Co-op, long gameplay sessions, other game builds, public code signing and automated registry PR review are unverified. Registry maintainers review submissions manually.
+
+## Local installer launch fix (unreleased)
+
+The first real missing-runtime test found that ShellExecute with the runas verb failed with Windows error 3 before the verified .NET installer started. Microsoft installers now launch directly from their download folder and handle elevation internally. Two regression checks cover this launch configuration and argument boundaries. All 91 checks and MSI packaging passed; the local MSI installed with exit 0 and its executable matched the published binary. The fixed installation flow still needs the user's retry; dependencies remain missing for that test. No public release has been updated.
+
+## Setup log viewer and native log failure (unreleased)
+
+The real runtime installation initially returned 1622 after elevation. Its native MSI log confirms a log-opening failure, but a subsequent application restart and retry successfully installed all .NET 6 components with the previous log destination. The intermittent root cause is unresolved; this is not attributed to path length or permissions without evidence. Native log filenames have been shortened defensively and exit 1622 now has a specific message. Setup and loader logs open in a built-in read-only viewer instead of shell file associations. Setup log selection excludes native child logs, related installer logs are selectable, and Refresh reads active logs with shared access. All 96 offline checks passed. An isolated WPF smoke check instantiated the viewer and verified loading the real failed setup log and switching to a real native installer log. MSI packaging and checksum verification passed. The new package is not installed while the user's existing MelonLoader download is running.
+
+## Mod controls acceptance preparation (unreleased)
+
+The manager now opens Installed mods on startup when the library contains packages, shows enabled counts for the next launch, and identifies the mod and resulting state after a toggle. Existing Enable/Disable controls and running-game guards are retained. All 96 checks and release packaging passed. On the selected real game, MelonLoader files were initially absent despite the historical successful setup log; the existing setup service restored them from the checksum-verified cache. Businesses was disabled (deployed DLL absent, library preserved, launch validation passed), then enabled with its original checksum and launch validation passed. The MSI updated successfully (exit 0), its installed EXE matched the build, and the manager reopened. Businesses is left enabled for the user's enabled/disabled gameplay launch tests. No game was launched by this validation. Changes remain local and uncommitted.

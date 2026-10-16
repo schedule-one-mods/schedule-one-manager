@@ -41,6 +41,7 @@ public partial class MainWindow : Window
             if (!string.IsNullOrWhiteSpace(settings.GameFolder)) ModLibrary.ValidateLibraryLocation(settings.LibraryFolder, settings.GameFolder);
             SavePaths();
             Reload();
+            if (packages.Count > 0) ModTabs.SelectedIndex = 1;
             });
             await Task.WhenAll(CheckRequirements(), LoadRegistry());
         };
@@ -101,7 +102,10 @@ public partial class MainWindow : Window
             var canToggle = stopped && (state == "Enabled" || (requirements?.Ready == true && !restartRequired && issue.Length == 0 && (state == "Disabled" || state.StartsWith("Installed externally"))));
             return new { Name = p.Manifest.Name, Version = p.Manifest.Version, Status = state + (issue.Length > 0 ? " · " + issue : ""), Action = state == "Enabled" ? "Disable" : state.StartsWith("Installed externally") ? "Adopt" : "Enable", CanToggle = canToggle, Package = p };
         }).ToArray();
-        LibrarySummary.Text = packages.Count == 0 ? "Your library is empty. Download a mod from Available mods." : $"{packages.Count} package(s) in your library. Close the game before enabling or disabling mods.";
+        var enabled = game == null ? 0 : packages.Count(p => ModDeployment.Status(game, p) == "Enabled");
+        LibrarySummary.Text = packages.Count == 0 ? "Your library is empty. Download a mod from Available mods." :
+            $"{enabled} of {packages.Count} mod(s) enabled for the next launch. " +
+            (stopped ? "Use Enable or Disable below, then Play Schedule I." : "Close the game to change enabled mods.");
         RenderRegistry();
     }
     private void RenderRegistry()
@@ -153,14 +157,21 @@ public partial class MainWindow : Window
     private async void ChooseLibrary(object sender, RoutedEventArgs e) { var dialog = new OpenFolderDialog { Title = "Select your mod library folder" }; if (dialog.ShowDialog() == true) { LibraryPath.Text = dialog.FolderName; await Run(() => { SavePaths(); Reload(); }); } }
     private async void SaveAndDetect(object sender, RoutedEventArgs e) { await Run(() => { SavePaths(); Reload(); }, "Folder settings saved."); await CheckRequirements(); }
     private async void Refresh(object sender, RoutedEventArgs e) => await Run(() => { SavePaths(); Reload(); });
-    private async void ToggleMod(object sender, RoutedEventArgs e) => await Run(() =>
+    private async void ToggleMod(object sender, RoutedEventArgs e)
     {
-        SavePaths();
-        var current = GameDetector.Detect(settings.GameFolder);
-        var package = ModLibrary.Read(((LibraryPackage)((Button)sender).Tag).Directory);
-        if (ModDeployment.Status(current, package) == "Enabled") ModDeployment.Disable(current, package); else ModDeployment.Enable(current, package);
-        Reload();
-    }, "Mod selection updated.");
+        string? result = null;
+        await Run(() =>
+        {
+            SavePaths();
+            var current = GameDetector.Detect(settings.GameFolder);
+            var package = ModLibrary.Read(((LibraryPackage)((Button)sender).Tag).Directory);
+            var disable = ModDeployment.Status(current, package) == "Enabled";
+            if (disable) ModDeployment.Disable(current, package); else ModDeployment.Enable(current, package);
+            result = $"{package.Manifest.Name} {(disable ? "disabled" : "enabled")}. The change applies on the next game launch.";
+            Reload();
+        });
+        if (result != null) StatusText.Text = result;
+    }
     private async void Play(object sender, RoutedEventArgs e) => await Run(async () =>
     {
         SavePaths(); Reload();
@@ -172,7 +183,7 @@ public partial class MainWindow : Window
     }, "Schedule I launched. Mod changes are locked while it is running.");
     private async void OpenLibrary(object sender, RoutedEventArgs e) => await Run(() => { SavePaths(); Directory.CreateDirectory(settings.LibraryFolder); Open(settings.LibraryFolder); });
     private async void OpenGame(object sender, RoutedEventArgs e) => await Run(() => Open(GameDetector.Detect(GamePath.Text).Folder));
-    private async void OpenLog(object sender, RoutedEventArgs e) => await Run(() => { var path = Path.Combine(GameDetector.Detect(GamePath.Text).Folder, "MelonLoader", "Latest.log"); if (!File.Exists(path)) throw new IOException("No loader log yet. Launch the game first."); Open(path); });
+    private async void OpenLog(object sender, RoutedEventArgs e) => await Run(() => { var path = Path.Combine(GameDetector.Detect(GamePath.Text).Folder, "MelonLoader", "Latest.log"); if (!File.Exists(path)) throw new IOException("No loader log yet. Launch the game first."); new LogWindow(this, path, false).Show(); });
     private static void Open(string path) => Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
 
     private void UpdateRequirementControls()
@@ -258,8 +269,8 @@ public partial class MainWindow : Window
     private void CancelSetup(object sender, RoutedEventArgs e) { setupCancellation?.Cancel(); CancelSetupButton.IsEnabled = false; StatusText.Text = "Cancelling the download…"; }
     private async void OpenSetupLog(object sender, RoutedEventArgs e) => await Run(() =>
     {
-        var path = setupLog ?? (Directory.Exists(DependencySetupService.LogDirectory) ? Directory.GetFiles(DependencySetupService.LogDirectory, "setup-*.log").Where(p => !p.EndsWith(".installer.log", StringComparison.OrdinalIgnoreCase)).OrderDescending().FirstOrDefault() : null);
+        var path = setupLog != null && File.Exists(setupLog) ? setupLog : SetupLogs.Latest(DependencySetupService.LogDirectory);
         if (path == null || !File.Exists(path)) throw new IOException("No requirements setup log yet.");
-        Open(path);
+        new LogWindow(this, path, true).Show();
     });
 }
