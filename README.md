@@ -2,7 +2,7 @@
 
 A Windows x64 desktop manager for local Schedule I mods, built with C# / .NET 10 / WPF and packaged as a per-user MSI and portable ZIP.
 
-The current version is **0.1.1**. The manager is distributed independently of mods and does not bundle game files, MelonLoader, or Businesses.
+The current version is **0.1.2**. The manager is distributed independently of mods and does not bundle game files, MelonLoader, or Businesses. It reads the [community registry](https://github.com/schedule-one-mods/schedule-one-mod-registry), lists available mods, and downloads verified release packages on demand.
 
 - [Build and usage](manager/README.md)
 - [GitHub Releases workflow](manager/RELEASING.md)
@@ -17,4 +17,4 @@ Build requirements: Windows x64, PowerShell 7 and .NET 10 SDK. No game installat
 
 Pushes to `main` build and test the application. A version that has no existing GitHub Release is published automatically as `v<version>`, with MSI, portable ZIP and checksums. Pull requests build artifacts only. Change `manager/Directory.Build.props` to publish the next version.
 
-Businesses source has been preserved locally under ignored `local-mod-archive/Businesses` for extraction into a separate repository later. Its files are removed from the current source layout; earlier Git history still contains them. Existing installed mods and user libraries are preserved. Repository discovery and a community catalog will be a separate feature.
+Businesses is maintained in [its own repository](https://github.com/schedule-one-mods/schedule-one-business-app) and registered independently. Earlier Git history still contains its original source. Existing installed mods and user libraries are preserved. Register new mods through a metadata PR to the registry; the manager does not scan arbitrary repositories.

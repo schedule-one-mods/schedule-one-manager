@@ -1,6 +1,14 @@
 using System.IO.Compression;
 using ScheduleI.Manager;
 
+if (args.FirstOrDefault() == "--registry-smoke") { await RegistryChecks.RemoteSmoke(); return; }
+if (args.FirstOrDefault() == "--registry-real-smoke")
+{
+    if (args.Length != 3) throw new ArgumentException("Pass --registry-real-smoke <game folder> <library folder>.");
+    await RegistryChecks.RealGameRoundTrip(args[1], args[2]);
+    return;
+}
+
 var root = Path.Combine(Path.GetTempPath(), "ScheduleIModManager-checks-" + Guid.NewGuid().ToString("N"));
 Directory.CreateDirectory(root);
 var count = 0;
@@ -27,6 +35,7 @@ try
     JsonFiles.Write(Path.Combine(fixture, "compatibility.json"), new Compatibility { Game = "Schedule I", GameVersions = ["0.4.7f5"], Backend = "IL2CPP", Platforms = ["Windows x64"], Loader = new() { Name = "MelonLoader", Versions = ["0.7.3"] } });
     var fixtureZip = Path.Combine(root, "fixture.zip");
     ZipFile.CreateFromDirectory(fixture, fixtureZip);
+    await RegistryChecks.Run(fixtureZip, root, Check);
     var packageZip = args.Length > 0 ? args[0] : fixtureZip;
     var package = ModLibrary.Import(packageZip, library);
     Check(args.Length > 0 || (package.Manifest.Name == "FixtureMod" && package.Manifest.Version == "0.0.1"), "import local package without game or mod dependencies");

@@ -12,14 +12,19 @@ public partial class MainWindow : Window
     private ManagerSettings settings = new();
     private GameInstallation? game;
     private IReadOnlyList<LibraryPackage> packages = [];
+    private readonly RegistryClient registry = new();
+    private IReadOnlyList<RegistryMod> availableMods = [];
     private bool? lastRunning;
     private readonly System.Windows.Threading.DispatcherTimer timer = new() { Interval = TimeSpan.FromSeconds(3) };
     public MainWindow()
     {
         InitializeComponent();
         VersionLabel.Text = "PROTOTYPE  " + (typeof(MainWindow).Assembly.GetName().Version?.ToString(3) ?? "Unknown");
-        Loaded += async (_, _) => await Run(async () =>
+        Closed += (_, _) => registry.Dispose();
+        Loaded += async (_, _) =>
         {
+            await Run(() =>
+            {
             if (File.Exists(ManagerSettings.FilePath)) settings = JsonFiles.Read<ManagerSettings>(ManagerSettings.FilePath);
             if (string.IsNullOrWhiteSpace(settings.GameFolder)) settings.GameFolder = FindGame() ?? "";
             GamePath.Text = settings.GameFolder;
@@ -27,8 +32,9 @@ public partial class MainWindow : Window
             if (!string.IsNullOrWhiteSpace(settings.GameFolder)) ModLibrary.ValidateLibraryLocation(settings.LibraryFolder, settings.GameFolder);
             SavePaths();
             Reload();
-            await Task.CompletedTask;
-        });
+            });
+            await LoadRegistry();
+        };
         timer.Tick += (_, _) =>
         {
             if (!ControlsPanel.IsEnabled || game == null) return;
@@ -87,8 +93,46 @@ public partial class MainWindow : Window
             var canToggle = stopped && (state == "Enabled" || (issue.Length == 0 && (state == "Disabled" || state.StartsWith("Installed externally"))));
             return new { Name = p.Manifest.Name, Version = p.Manifest.Version, Status = state + (issue.Length > 0 ? " · " + issue : ""), Action = state == "Enabled" ? "Disable" : state.StartsWith("Installed externally") ? "Adopt" : "Enable", CanToggle = canToggle, Package = p };
         }).ToArray();
-        LibrarySummary.Text = packages.Count == 0 ? "No packages yet. Import a ZIP containing manifest.json, compatibility.json and one Mods DLL." : $"{packages.Count} package(s) in your library. Compatibility uses the publisher’s tested game and loader versions.";
+        LibrarySummary.Text = packages.Count == 0 ? "Your library is empty. Download a mod from Available mods." : $"{packages.Count} package(s) in your library. Close the game before enabling or disabling mods.";
+        RenderRegistry();
     }
+    private void RenderRegistry()
+    {
+        RegistryGrid.ItemsSource = availableMods.Select(mod =>
+        {
+            var downloaded = packages.Any(p => p.Manifest.Name == mod.PackageName && p.Manifest.Version == mod.Version);
+            var compatibility = mod.Compatibility.Backend + " · " + string.Join(", ", mod.Compatibility.GameVersions);
+            if (game != null && (game.Backend != mod.Compatibility.Backend || !mod.Compatibility.GameVersions.Contains(game.Version))) compatibility += " · Unverified for this game";
+            return new { mod.Name, mod.Author, mod.Version, Compatibility = compatibility, Action = downloaded ? "Downloaded" : "Download", CanDownload = !downloaded, Mod = mod };
+        }).ToArray();
+    }
+    private async Task LoadRegistry()
+    {
+        RegistryRefreshButton.IsEnabled = false;
+        RegistrySummary.Text = "Fetching the community registry…";
+        try
+        {
+            var fetched = await registry.Fetch();
+            availableMods = fetched;
+            RenderRegistry();
+            RegistrySummary.Text = fetched.Count == 0 ? "No mods are listed in the community registry yet." : $"{fetched.Count} mod(s) available · schedule-one-mods/schedule-one-mod-registry";
+        }
+        catch (Exception exception)
+        {
+            RegistrySummary.Text = "Could not refresh the registry: " + exception.Message + (availableMods.Count > 0 ? " Showing the last list from this session." : " Your downloaded mods remain available in Installed mods.");
+        }
+        finally { RegistryRefreshButton.IsEnabled = true; }
+    }
+    private async void RefreshRegistry(object sender, RoutedEventArgs e) => await Run(LoadRegistry);
+    private async void DownloadMod(object sender, RoutedEventArgs e) => await Run(async () =>
+    {
+        SavePaths();
+        var mod = (RegistryMod)((Button)sender).Tag;
+        StatusText.Text = $"Downloading and verifying {mod.Name} {mod.Version}…";
+        await registry.Download(mod, settings.LibraryFolder);
+        Reload();
+        ModTabs.SelectedIndex = 1;
+    }, "Mod downloaded and verified. Use Enable in Installed mods when you’re ready.");
     private async Task Run(Func<Task> action, string? success = null)
     {
         ControlsPanel.IsEnabled = PlayButton.IsEnabled = false;
@@ -101,11 +145,6 @@ public partial class MainWindow : Window
     private async void ChooseLibrary(object sender, RoutedEventArgs e) { var dialog = new OpenFolderDialog { Title = "Select your mod library folder" }; if (dialog.ShowDialog() == true) { LibraryPath.Text = dialog.FolderName; await Run(() => { SavePaths(); Reload(); }); } }
     private async void SaveAndDetect(object sender, RoutedEventArgs e) => await Run(() => { SavePaths(); Reload(); }, "Folder settings saved.");
     private async void Refresh(object sender, RoutedEventArgs e) => await Run(() => { SavePaths(); Reload(); });
-    private async void ImportMod(object sender, RoutedEventArgs e)
-    {
-        var dialog = new OpenFileDialog { Title = "Import a Schedule I mod package", Filter = "Mod package (*.zip)|*.zip" };
-        if (dialog.ShowDialog() == true) await Run(() => { SavePaths(); ModLibrary.Import(dialog.FileName, settings.LibraryFolder); Reload(); }, "Package imported. Enable it when you’re ready.");
-    }
     private async void ToggleMod(object sender, RoutedEventArgs e) => await Run(() =>
     {
         SavePaths();

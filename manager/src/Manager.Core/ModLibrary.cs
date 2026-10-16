@@ -40,7 +40,7 @@ public static partial class ModLibrary
         RejectLinks(library);
         return !Directory.Exists(library) ? [] : Directory.EnumerateDirectories(library).Where(d => !Path.GetFileName(d).StartsWith('.')).Select(Read).OrderBy(p => p.Manifest.Name).ThenBy(p => p.Manifest.Version).ToArray();
     }
-    public static LibraryPackage Import(string zipPath, string library)
+    public static LibraryPackage Import(string zipPath, string library, Action<LibraryPackage>? validate = null)
     {
         RejectLinks(library);
         Directory.CreateDirectory(library);
@@ -49,6 +49,7 @@ public static partial class ModLibrary
         {
             using (var zip = ZipFile.OpenRead(zipPath))
             {
+                if (zip.Entries.Count > 16) throw new InvalidDataException("Mod package contains too many entries.");
                 long total = 0;
                 var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 foreach (var entry in zip.Entries)
@@ -65,6 +66,7 @@ public static partial class ModLibrary
                 }
             }
             var package = Read(stage);
+            validate?.Invoke(package);
             var destinationFolder = Path.Combine(library, package.Identity);
             if (Directory.Exists(destinationFolder))
             {
