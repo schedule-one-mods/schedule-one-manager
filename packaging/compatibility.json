@@ -1,0 +1,13 @@
+{
+  "game": "Schedule I",
+  "game_versions_tested": ["0.4.7f5"],
+  "scripting_backend": "IL2CPP",
+  "unity_version_tested": "2022.3.62f2",
+  "platforms_tested": ["Windows x64"],
+  "loader": { "name": "MelonLoader", "versions_tested": ["0.7.3"] },
+  "thunderstore_dependencies": ["LavaGang-MelonLoader-0.7.3"],
+  "co_op_client_testing": "Not tested",
+  "mod_manager_installation_testing": "Not tested",
+  "runtime_game_version_gate": false,
+  "other_game_versions": "Unverified; no forward or backward compatibility guarantee"
+}

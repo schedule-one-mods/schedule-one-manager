@@ -1,0 +1,8 @@
+tools/
+references/
+artifacts/
+**/bin/
+**/obj/
+manager/SeedPackages/
+.vs/
+*.user

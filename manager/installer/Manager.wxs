@@ -1,0 +1,22 @@
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="Schedule I Mod Manager" Manufacturer="Schedule I Mod Manager Contributors" Version="0.1.0" UpgradeCode="75CFA82E-FDE1-4B53-8363-25EB37923B43" Scope="perUser" InstallerVersion="500">
+    <MajorUpgrade AllowSameVersionUpgrades="yes" DowngradeErrorMessage="A newer version of Schedule I Mod Manager is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="INSTALLFOLDER" Name="ScheduleIModManagerApp" />
+    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="ApplicationProgramsFolder" Name="Schedule I Mod Manager">
+        <Component Id="StartMenuShortcut" Guid="AC7CFAD9-5B7A-4BCD-A19F-D5D991280DAF">
+          <Shortcut Id="LaunchShortcut" Name="Schedule I Mod Manager" Target="[INSTALLFOLDER]ScheduleIModManager.exe" WorkingDirectory="INSTALLFOLDER" />
+          <RemoveFolder Id="RemoveStartMenuFolder" On="uninstall" />
+          <RegistryValue Root="HKCU" Key="Software\ScheduleIModManager" Name="Installed" Type="integer" Value="1" KeyPath="yes" />
+        </Component>
+      </Directory>
+    </StandardDirectory>
+    <ComponentGroup Id="ApplicationFiles" Directory="INSTALLFOLDER">
+      <Files Include="$(var.PublishDir)\**" />
+    </ComponentGroup>
+    <Feature Id="MainFeature" Title="Schedule I Mod Manager"><ComponentGroupRef Id="ApplicationFiles"/><ComponentRef Id="StartMenuShortcut"/></Feature>
+  </Package>
+</Wix>
