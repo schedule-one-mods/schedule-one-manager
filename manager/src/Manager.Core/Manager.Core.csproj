@@ -4,4 +4,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
   </PropertyGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="LoaderFiles.json" LogicalName="ScheduleI.Manager.LoaderFiles.json" />
+    <InternalsVisibleTo Include="Manager.Checks" />
+  </ItemGroup>
 </Project>

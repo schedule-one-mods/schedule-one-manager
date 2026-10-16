@@ -19,7 +19,9 @@ public static class ModDeployment
         if (!package.Compatibility.GameVersions.Contains(game.Version)) return $"Game {game.Version} is unverified. Tested: {string.Join(", ", package.Compatibility.GameVersions)}.";
         if (!package.Compatibility.Loader.Versions.Contains(game.LoaderVersion)) return $"Requires MelonLoader {string.Join(", ", package.Compatibility.Loader.Versions)}; found {game.LoaderVersion}.";
         if (!File.Exists(Path.Combine(game.Folder, "version.dll"))) return "MelonLoader bootstrap version.dll is missing.";
+        if (!game.LoaderHealthy) return "MelonLoader is incomplete. Check requirements before enabling mods.";
         if (!game.RuntimeInstalled) return ".NET 6 Desktop Runtime (x64) is missing.";
+        if (!game.VisualCppInstalled) return "Visual C++ x64 Runtime is missing. Install requirements before enabling mods.";
         if (package.Manifest.Dependencies.Any(d => !package.Compatibility.Loader.Versions.Select(v => "LavaGang-MelonLoader-" + v).Contains(d))) return "This package has unsupported additional dependencies.";
         return "";
     }

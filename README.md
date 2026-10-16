@@ -2,7 +2,7 @@
 
 A Windows x64 desktop manager for local Schedule I mods, built with C# / .NET 10 / WPF and packaged as a per-user MSI and portable ZIP.
 
-The current version is **0.1.2**. The manager is distributed independently of mods and does not bundle game files, MelonLoader, or Businesses. It reads the [community registry](https://github.com/schedule-one-mods/schedule-one-mod-registry), lists available mods, and downloads verified release packages on demand.
+The current version is **0.1.3**. The manager is distributed independently of mods and does not bundle game files, MelonLoader, or Businesses. It includes a verified requirements setup flow for MelonLoader, .NET 6 Desktop and Visual C++ x64. It reads the [community registry](https://github.com/schedule-one-mods/schedule-one-mod-registry), lists available mods, and downloads verified release packages on demand.
 
 - [Build and usage](manager/README.md)
 - [GitHub Releases workflow](manager/RELEASING.md)

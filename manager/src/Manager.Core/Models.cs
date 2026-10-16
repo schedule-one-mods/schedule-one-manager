@@ -29,10 +29,15 @@ public static class JsonFiles
 public sealed class ManagerSettings
 {
     public string GameFolder { get; set; } = "";
+    public DateTimeOffset? DependencyRestartRequestedAt { get; set; }
     public string LibraryFolder { get; set; } = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ScheduleIModManager", "Library");
     public static string FilePath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ScheduleIModManager", "settings.json");
 }
-public sealed record GameInstallation(string Folder, string Executable, string Version, string Backend, string LoaderVersion, bool RuntimeInstalled);
+public sealed record GameInstallation(string Folder, string Executable, string Version, string Backend, string LoaderVersion, bool RuntimeInstalled)
+{
+    public bool VisualCppInstalled { get; init; } = true;
+    public bool LoaderHealthy { get; init; } = true;
+}
 public sealed class PackageManifest
 {
     [JsonPropertyName("name")] public string Name { get; set; } = "";

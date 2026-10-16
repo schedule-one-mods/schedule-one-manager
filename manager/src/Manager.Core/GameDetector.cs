@@ -19,18 +19,14 @@ public static partial class GameDetector
         var versions = File.Exists(metadata) ? VersionPattern().Matches(Encoding.ASCII.GetString(File.ReadAllBytes(metadata))).Select(m => m.Value).Distinct().ToArray() : [];
         var loader = Path.Combine(folder, "MelonLoader", "net6", "MelonLoader.dll");
         var version = File.Exists(loader) ? FileVersionInfo.GetVersionInfo(loader).ProductVersion?.Split('+')[0] ?? "Unknown" : "Missing";
-        return new(folder, exe, versions.Length == 1 ? versions[0] : "Unknown", backend, version, HasDesktopRuntime6());
+        return new(folder, exe, versions.Length == 1 ? versions[0] : "Unknown", backend, version, HasDesktopRuntime6())
+        {
+            VisualCppInstalled = SystemPrerequisites.HasVisualCppX64(),
+            LoaderHealthy = RequirementCatalog.HasCriticalLoaderFiles(folder)
+        };
     }
 
-    public static bool HasDesktopRuntime6()
-    {
-        var roots = new[] { Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), Environment.GetEnvironmentVariable("DOTNET_ROOT") };
-        return roots.Where(r => !string.IsNullOrWhiteSpace(r)).Any(r =>
-        {
-            var shared = Path.Combine(r!, r!.EndsWith("dotnet", StringComparison.OrdinalIgnoreCase) ? "" : "dotnet", "shared", "Microsoft.WindowsDesktop.App");
-            return Directory.Exists(shared) && Directory.EnumerateDirectories(shared).Any(d => Path.GetFileName(d).StartsWith("6."));
-        });
-    }
+    public static bool HasDesktopRuntime6() => SystemPrerequisites.HasDesktopRuntime6();
 
     public static bool IsRunning(GameInstallation game)
     {

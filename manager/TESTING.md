@@ -1,10 +1,24 @@
 # Validation
 
-## Automated checks for 0.1.2
+## Automated checks for 0.1.3
 
-`manager/build.ps1 -Installer` runs 44 offline checks using a temporary PE fixture and fake HTTP responses. No game, Businesses source or real network access is required in CI. Checks cover local package import, ZIP traversal, compatibility, enable/disable/adoption, file ownership, changed DLL conflicts and launch validation, plus registry parsing, unsupported schema, duplicate identities, repository/tag URL binding, HTTP failures, API fallback, insecure redirects, index size limits, download SHA-256/size, package identity/compatibility mismatches, cancellation and temporary-file cleanup.
+`manager/build.ps1 -Installer` runs 89 offline checks using a temporary PE fixture and fake HTTP responses. No game, Businesses source or real network access is required in CI. Checks cover local package import, ZIP traversal, compatibility, enable/disable/adoption, file ownership, changed DLL conflicts and launch validation, plus registry parsing, unsupported schema, duplicate identities, repository/tag URL binding, HTTP failures, API fallback, insecure redirects, index size limits, download SHA-256/size, package identity/compatibility mismatches, cancellation and temporary-file cleanup.
 
 `manager/verify-release.ps1` verifies versioned release asset filenames and SHA-256 files, reads all ZIP entries, and enforces an exact manager-only file allowlist. No mod or game binaries are bundled.
+
+## Requirements setup tests
+
+Offline fixtures cover fresh installation, missing-file repair, unchanged/foreign file protection, preserving newer Visual C++ versions through detection, x64 versus x86 runtime checks, missing Desktop/Core/host components, dotnet patch requirements, dependency cache reuse/corruption, download checksum and size errors, cancellation and cleanup, HTTPS downgrade rejection, installer exit failures, success without a detected installation, restart/cancel outcomes, native log paths, extraction rollback and retry. Microsoft installers are replaced with test callbacks in CI; no machine dependencies are installed by unit checks.
+
+```powershell
+dotnet run --project manager/tests/Manager.Checks -c Release -- --dependency-smoke
+```
+
+This optional test validates official payload checksums and exercises actual MelonLoader fresh installation, all 164 file hashes, and missing-file repair inside a disposable game directory. It uses verified cached payloads when present. The .NET and Visual C++ installers are not executed. The official payload checks and fresh/repair fixture tests passed locally. The .NET payload was downloaded through the new downloader; the slow official MelonLoader/Visual C++ network routes were supplemented with already downloaded, checksum-verified official payloads for completing the fixture test. Neither the actual game installation nor system runtimes were changed.
+
+Pinned Microsoft downloads had valid Authenticode signatures when checked locally. Native Windows installer/elevation and a genuine 3010/reboot cycle still require clean Windows VM acceptance testing. The existing development machine already has both runtimes, so uninstalling shared runtimes here would not be an appropriate clean-machine test.
+
+The 0.1.3 MSI installed locally (exit 0) and its installed EXE matched the published binary. Desktop inspection showed MelonLoader Ready, .NET 6 Desktop x64 Installed, Visual C++ x64 Installed, the setup action disabled for this already healthy installation, Check requirements available, and Play available after verification. This read-only detection did not reinstall system components or change game files.
 
 ## Public registry smoke test
 
@@ -32,4 +46,4 @@ The original manager was installed with Windows Installer (exit 0), detected Sch
 
 ## Remaining testing
 
-A clean machine still needs testing for dependency download/elevation and first interop generation. Co-op, long gameplay sessions, other game builds, public code signing and automated registry PR review are unverified. Registry maintainers review submissions manually.
+A clean Windows VM still needs acceptance testing for real Microsoft runtime installation/elevation, reboot handling and first interop generation. Co-op, long gameplay sessions, other game builds, public code signing and automated registry PR review are unverified. Registry maintainers review submissions manually.

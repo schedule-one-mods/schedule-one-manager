@@ -1,6 +1,4 @@
-using System.Diagnostics;
 using System.IO.Compression;
-using System.Security.Cryptography;
 
 namespace ScheduleI.Manager;
 
@@ -8,72 +6,70 @@ public static class DependencyInstaller
 {
     public const string LoaderVersion = "0.7.3";
     public const string LoaderHash = "5B2B2F3D1CD42B59EC886C5BDC2663EDAE87A0097A4F4A8F58C0965A99DDA416";
-    private static readonly HttpClient Client = new() { Timeout = TimeSpan.FromMinutes(10) };
-    public static string Cache => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ScheduleIModManager", "Downloads");
-    public static async Task<string> Download(string url, string filename, string hash, bool sha512 = false)
-    {
-        Directory.CreateDirectory(Cache);
-        var path = Path.Combine(Cache, filename);
-        bool Valid(string file) { using var stream = File.OpenRead(file); return Convert.ToHexString(sha512 ? SHA512.HashData(stream) : SHA256.HashData(stream)).Equals(hash, StringComparison.OrdinalIgnoreCase); }
-        if (File.Exists(path) && Valid(path)) return path;
-        var temp = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
-        try
-        {
-            using var response = await Client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
-            response.EnsureSuccessStatusCode();
-            await using (var output = File.Create(temp)) await response.Content.CopyToAsync(output);
-            if (!Valid(temp)) throw new IOException("Downloaded file checksum did not match the pinned release.");
-            File.Move(temp, path, true);
-            return path;
-        }
-        finally { if (File.Exists(temp)) File.Delete(temp); }
-    }
-    public static async Task InstallLoader(GameInstallation game)
-    {
-        GameDetector.RequireStopped(game);
-        if (game.Backend != "IL2CPP" || game.Version != "0.4.7f5") throw new InvalidOperationException("This prototype provisions MelonLoader only for the tested IL2CPP game 0.4.7f5.");
-        if (Directory.Exists(Path.Combine(game.Folder, "MelonLoader")) || File.Exists(Path.Combine(game.Folder, "version.dll"))) throw new IOException("An existing loader or version.dll is present. The prototype will not replace it. Use its original installer to repair it.");
-        var archive = await Download("https://github.com/LavaGang/MelonLoader/releases/download/v0.7.3/MelonLoader.x64.zip", "MelonLoader.x64.0.7.3.zip", LoaderHash);
-        InstallLoaderArchive(game, archive);
-    }
-    public static async Task InstallRuntime(GameInstallation game)
-    {
-        GameDetector.RequireStopped(game);
-        var installer = await Download("https://builds.dotnet.microsoft.com/dotnet/WindowsDesktop/6.0.36/windowsdesktop-runtime-6.0.36-win-x64.exe", "windowsdesktop-runtime-6.0.36-win-x64.exe", "86fa63997e7e0dc6f3bf609e00880388dcf8d985c8f6417d07ebbbb1ecc957bf90214c8ff93f559a0e762b5626ba8c56c581f4d506aa4de7555f9792c2da254d", true);
-        GameDetector.RequireStopped(game);
-        using var process = Process.Start(new ProcessStartInfo(installer, "/install /passive /norestart") { UseShellExecute = true }) ?? throw new IOException("Could not start the runtime installer.");
-        await process.WaitForExitAsync();
-        if (process.ExitCode is not 0 and not 3010) throw new IOException("Runtime installer exited with code " + process.ExitCode);
-    }
-    public static void InstallLoaderArchive(GameInstallation game, string archive)
+
+    public static void InstallLoaderArchive(GameInstallation game, string archive, bool repairMissing = false, CancellationToken cancellation = default) =>
+        InstallPayload(game, archive, RequirementCatalog.Loader, RequirementCatalog.LoaderFiles, repairMissing, cancellation);
+
+    internal static void InstallPayload(GameInstallation game, string archive, DependencyArtifact artifact, IReadOnlyList<LoaderFile> files, bool repairMissing, CancellationToken cancellation)
     {
         GameDetector.RequireStopped(game);
         ModLibrary.RejectLinks(game.Folder);
-        if (ModLibrary.Hash(archive) != LoaderHash) throw new IOException("Loader archive checksum mismatch.");
+        if (new FileInfo(archive).Length != artifact.Size || ModLibrary.Hash(archive) != artifact.Hash.ToUpperInvariant()) throw new IOException("Loader archive checksum mismatch.");
+        var expected = files.ToDictionary(f => f.Path, StringComparer.Ordinal);
         using var zip = ZipFile.OpenRead(archive);
-        var files = zip.Entries.Where(e => !e.FullName.EndsWith('/')).ToArray();
-        foreach (var entry in files)
+        var entries = zip.Entries.Where(e => !e.FullName.EndsWith('/')).ToArray();
+        if (entries.Length != files.Count || entries.Select(e => e.FullName).Distinct(StringComparer.OrdinalIgnoreCase).Count() != entries.Length) throw new InvalidDataException("Unexpected loader archive entries.");
+        foreach (var entry in entries)
         {
-            var name = entry.FullName.Replace('\\', '/');
-            if (!(name == "version.dll" || name.StartsWith("MelonLoader/")) || name.Contains(':') || name.Split('/').Any(s => s is ".." or ".") || ((entry.ExternalAttributes >> 16) & 0xF000) == 0xA000) throw new IOException("Unexpected loader archive path.");
+            cancellation.ThrowIfCancellationRequested();
+            var name = entry.FullName;
+            if (!(name == "version.dll" || name.StartsWith("MelonLoader/")) || name.Contains(':') || name.Contains('\\') || name.Split('/').Any(s => s is ".." or ".") || !expected.TryGetValue(name, out var definition) || entry.Length != definition.Size || ((entry.ExternalAttributes >> 16) & 0xF000) == 0xA000)
+                throw new IOException("Unexpected loader archive path or size.");
             var target = Path.Combine(game.Folder, name);
             ModLibrary.RejectLinks(Path.GetDirectoryName(target)!);
-            if (File.Exists(target)) throw new IOException("Loader installation would overwrite an existing file: " + name);
+            if (File.Exists(target) && (!repairMissing || (File.GetAttributes(target) & FileAttributes.ReparsePoint) != 0 || !ModLibrary.Hash(target).Equals(definition.Hash, StringComparison.OrdinalIgnoreCase)))
+                throw new IOException("Loader setup would replace an existing or changed file: " + name);
         }
         var created = new List<string>();
+        var directories = new List<string>();
+        void CreateDirectory(string path)
+        {
+            var missing = new Stack<string>();
+            for (var directory = Path.GetFullPath(path); !Directory.Exists(directory); directory = Path.GetDirectoryName(directory)!)
+            {
+                if (!directory.StartsWith(Path.GetFullPath(game.Folder).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)) throw new IOException("Loader directory escaped the game folder.");
+                missing.Push(directory);
+            }
+            while (missing.TryPop(out var directory)) { Directory.CreateDirectory(directory); directories.Add(directory); }
+        }
         try
         {
-            foreach (var entry in files)
+            foreach (var entry in entries)
             {
+                cancellation.ThrowIfCancellationRequested();
                 var target = Path.Combine(game.Folder, entry.FullName);
-                Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-                using var output = new FileStream(target, FileMode.CreateNew, FileAccess.Write, FileShare.None);
-                created.Add(target);
-                using var input = entry.Open();
-                input.CopyTo(output);
+                if (File.Exists(target)) continue; // Only verified existing files reached this point.
+                CreateDirectory(Path.GetDirectoryName(target)!);
+                using (var output = new FileStream(target, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+                {
+                    created.Add(target);
+                    using var input = entry.Open();
+                    input.CopyTo(output);
+                }
+                if (!ModLibrary.Hash(target).Equals(expected[entry.FullName].Hash, StringComparison.OrdinalIgnoreCase)) throw new IOException("Extracted loader file verification failed: " + entry.FullName);
             }
-            JsonFiles.Write(Path.Combine(game.Folder, "UserData", "ScheduleIModManager", "loader-install.json"), created.Select(p => new { Path = Path.GetRelativePath(game.Folder, p), Sha256 = ModLibrary.Hash(p) }).ToArray());
+            cancellation.ThrowIfCancellationRequested();
+            ModLibrary.RejectLinks(Path.Combine(game.Folder, "Mods"));
+            CreateDirectory(Path.Combine(game.Folder, "Mods"));
+            CreateDirectory(Path.Combine(game.Folder, "UserData", "ScheduleIModManager"));
+            JsonFiles.Write(Path.Combine(game.Folder, "UserData", "ScheduleIModManager", "loader-install.json"), files.Select(f => new { Path = f.Path, Sha256 = f.Hash }).ToArray());
         }
-        catch { foreach (var path in created) if (File.Exists(path)) File.Delete(path); throw; }
+        catch
+        {
+            foreach (var path in created) if (File.Exists(path)) File.Delete(path);
+            foreach (var directory in directories.OrderByDescending(p => p.Length))
+                if (Directory.Exists(directory) && !Directory.EnumerateFileSystemEntries(directory).Any()) Directory.Delete(directory);
+            throw;
+        }
     }
 }

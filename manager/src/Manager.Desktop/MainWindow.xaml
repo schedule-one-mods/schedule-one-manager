@@ -24,7 +24,8 @@
                 <WrapPanel Margin="0,8,0,0"><Button Content="Save &amp; detect" Click="SaveAndDetect"/><Button Content="Open library" Click="OpenLibrary"/><Button Content="Open game folder" Click="OpenGame"/></WrapPanel>
                 <TextBlock x:Name="GameSummary" Text="Select your game folder to get started." Foreground="#73D5B5" Margin="0,8,0,0" TextWrapping="Wrap"/>
                 <TextBlock x:Name="DependencySummary" Foreground="#A9BCCC" Margin="0,5,0,8" TextWrapping="Wrap"/>
-                <WrapPanel><Button x:Name="LoaderButton" Content="Install MelonLoader 0.7.3" Click="InstallLoader"/><Button x:Name="RuntimeButton" Content="Install .NET 6 Desktop (x64)" Click="InstallRuntime"/></WrapPanel>
+                <WrapPanel><Button x:Name="SetupButton" Content="Install missing requirements" Click="InstallRequirements"/><Button x:Name="CheckRequirementsButton" Content="Check requirements" Click="RecheckRequirements"/></WrapPanel>
+                <TextBlock x:Name="RequirementDetail" Foreground="#A9BCCC" Margin="0,6,0,0" TextWrapping="Wrap"/>
             </StackPanel></Border>
             <Border Background="#192633" CornerRadius="10" Padding="16">
                 <TabControl x:Name="ModTabs" Background="#192633" BorderThickness="0" Foreground="#EDF2F7">
@@ -57,6 +58,7 @@
                 </TabControl>
             </Border>
         </StackPanel></ScrollViewer>
-        <Grid Grid.Row="2" Margin="0,12,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><StackPanel Margin="0,0,20,0"><TextBlock x:Name="StatusText" Text="Ready." TextWrapping="Wrap" Foreground="#A9BCCC"/><Button Content="Open loader log" Click="OpenLog" HorizontalAlignment="Left" Padding="0,6" Background="Transparent" Foreground="#73D5B5"/></StackPanel><Button x:Name="PlayButton" Grid.Column="1" Content="Play Schedule I" Background="#258466" FontWeight="SemiBold" FontSize="16" Padding="28,14" Margin="0" VerticalAlignment="Center" Click="Play"/></Grid>
+        <Grid Grid.Row="2" Margin="0,12,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><StackPanel Margin="0,0,20,0"><TextBlock x:Name="StatusText" Text="Ready." TextWrapping="Wrap" Foreground="#A9BCCC"/><ProgressBar x:Name="SetupProgressBar" Height="6" Margin="0,6,0,6" Visibility="Collapsed" Foreground="#73D5B5" Background="#213140"/>
+                <WrapPanel><Button Content="Open loader log" Click="OpenLog" Padding="0,6" Background="Transparent" Foreground="#73D5B5"/><Button Content="Open setup log" Click="OpenSetupLog" Padding="8,6" Background="Transparent" Foreground="#73D5B5"/><Button x:Name="CancelSetupButton" Content="Cancel setup" Click="CancelSetup" Visibility="Collapsed" Padding="12,6"/></WrapPanel></StackPanel><Button x:Name="PlayButton" Grid.Column="1" Content="Play Schedule I" Background="#258466" FontWeight="SemiBold" FontSize="16" Padding="28,14" Margin="0" VerticalAlignment="Center" Click="Play"/></Grid>
     </Grid>
 </Window>

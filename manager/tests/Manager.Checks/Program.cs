@@ -2,6 +2,7 @@ using System.IO.Compression;
 using ScheduleI.Manager;
 
 if (args.FirstOrDefault() == "--registry-smoke") { await RegistryChecks.RemoteSmoke(); return; }
+if (args.FirstOrDefault() == "--dependency-smoke") { await DependencyChecks.RemoteSmoke(); return; }
 if (args.FirstOrDefault() == "--registry-real-smoke")
 {
     if (args.Length != 3) throw new ArgumentException("Pass --registry-real-smoke <game folder> <library folder>.");
@@ -26,7 +27,7 @@ try
     File.WriteAllText(Path.Combine(folder, "version.dll"), "fixture");
     var detected = GameDetector.Detect(folder);
     Check(detected.Version == "0.4.7f5" && detected.Backend == "IL2CPP", "detect installed version and backend from game files");
-    var game = detected with { LoaderVersion = "0.7.3", RuntimeInstalled = true };
+    var game = detected with { LoaderVersion = "0.7.3", RuntimeInstalled = true, LoaderHealthy = true, VisualCppInstalled = true };
     // A harmless PE fixture exercises copying and hashing without loading mod or game code.
     var fixture = Path.Combine(root, "FixturePackage");
     Directory.CreateDirectory(Path.Combine(fixture, "Mods"));
@@ -36,6 +37,7 @@ try
     var fixtureZip = Path.Combine(root, "fixture.zip");
     ZipFile.CreateFromDirectory(fixture, fixtureZip);
     await RegistryChecks.Run(fixtureZip, root, Check);
+    await DependencyChecks.Run(root, Check);
     var packageZip = args.Length > 0 ? args[0] : fixtureZip;
     var package = ModLibrary.Import(packageZip, library);
     Check(args.Length > 0 || (package.Manifest.Name == "FixtureMod" && package.Manifest.Version == "0.0.1"), "import local package without game or mod dependencies");
@@ -51,6 +53,8 @@ try
     Reject(() => ModDeployment.Enable(game with { Backend = "Mono" }, package), "block wrong scripting backend");
     Reject(() => ModDeployment.Enable(game with { LoaderVersion = "0.7.2" }, package), "block untested loader version");
     Reject(() => ModDeployment.Enable(game with { RuntimeInstalled = false }, package), "block missing game runtime");
+    Reject(() => ModDeployment.Enable(game with { LoaderHealthy = false }, package), "block incomplete MelonLoader before enabling a mod");
+    Reject(() => ModDeployment.Enable(game with { VisualCppInstalled = false }, package), "block missing Visual C++ x64 runtime before enabling a mod");
     ModDeployment.Enable(game, package);
     Check(ModDeployment.Status(game, package) == "Enabled", "enable and record ownership");
     ModDeployment.Enable(game, package);
