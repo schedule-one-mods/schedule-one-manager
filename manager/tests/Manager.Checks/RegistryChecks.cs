@@ -8,75 +8,118 @@ internal static class RegistryChecks
     public static async Task Run(string fixtureZip, string root, Action<bool, string> check)
     {
         var bytes = File.ReadAllBytes(fixtureZip);
-        RegistryMod Entry() => new()
-        {
-            Id = "fixture-mod", Name = "Fixture Mod", Author = "Test Author", Summary = "Test fixture",
-            Repository = "https://github.com/test-author/test-mod", Version = "0.0.1", PackageName = "FixtureMod",
-            DownloadUrl = "https://github.com/test-author/test-mod/releases/download/v0.0.1/FixtureMod.zip",
-            Sha256 = ModLibrary.Hash(fixtureZip).ToLowerInvariant(), SizeBytes = bytes.Length,
-            Compatibility = new() { Game = "Schedule I", GameVersions = ["0.4.7f5"], Backend = "IL2CPP", Platforms = ["Windows x64"], Loader = new() { Name = "MelonLoader", Versions = ["0.7.3"] } }
-        };
-        var entry = Entry();
-        string Index(params RegistryMod[] mods) => JsonSerializer.Serialize(new RegistryDocument { SchemaVersion = 1, Mods = mods.ToList() }, JsonFiles.Options);
+        RegistryMod Entry() => new() { Id = "fixture-mod", Name = "Fixture Mod", Author = "Test Author", Summary = "A test package.",
+            Repository = "https://github.com/test-author/test-mod", PackageName = "FixtureMod" };
+        var compatibility = new Compatibility { Game = "Schedule I", GameVersions = ["0.4.7f5"], Backend = "IL2CPP", Platforms = ["Windows x64"], Loader = new() { Name = "MelonLoader", Versions = ["0.7.3"] } };
+        string Index(params RegistryMod[] mods) => JsonSerializer.Serialize(new RegistryDocument { SchemaVersion = 2, Mods = mods.ToList() }, JsonFiles.Options);
+        object Release(string version, bool prerelease = false, string? url = null, string? digest = null) => new { tag_name = "v" + version, draft = false, prerelease,
+            assets = new[] { new { name = "FixtureMod-" + version + "-IL2CPP.zip", size = bytes.Length, digest = digest ?? "sha256:" + ModLibrary.Hash(fixtureZip).ToLowerInvariant(),
+                browser_download_url = url ?? "https://github.com/test-author/test-mod/releases/download/v" + version + "/FixtureMod-" + version + "-IL2CPP.zip" } } };
         async Task Reject(Func<Task> action, string name)
         {
             try { await action(); }
             catch (Exception exception) when (exception is InvalidDataException or IOException or HttpRequestException or OperationCanceledException) { check(true, name); return; }
             throw new Exception("Expected registry rejection: " + name);
         }
-        RegistryClient Client(string index, byte[]? payload = null, HttpStatusCode status = HttpStatusCode.OK) => new(new HttpClient(new StubHandler(request => new(status)
+        RegistryClient Client(string index, object[]? releases = null, byte[]? payload = null, string latest = "v0.0.1", string? compatibilityJson = null) => new(new HttpClient(new StubHandler(request =>
         {
-            RequestMessage = request,
-            Content = request.RequestUri!.AbsoluteUri == RegistryClient.IndexUrl ? new StringContent(index, Encoding.UTF8, "application/json") : new ByteArrayContent(payload ?? bytes)
+            var url = request.RequestUri!.AbsoluteUri;
+            var text = url == RegistryClient.IndexUrl || url == RegistryClient.RawIndexUrl ? index :
+                url.EndsWith("/latest") ? JsonSerializer.Serialize(new { tag_name = latest }) :
+                url.Contains("/releases?") ? JsonSerializer.Serialize(url.Contains("page=2") ? Array.Empty<object>() : releases ?? [Release("0.0.1")]) :
+                url.Contains("raw.githubusercontent") ? compatibilityJson ?? JsonSerializer.Serialize(compatibility, JsonFiles.Options) : null;
+            return new(HttpStatusCode.OK) { RequestMessage = request, Content = text != null ? new StringContent(text) : new ByteArrayContent(payload ?? bytes) };
         })));
-        using (var client = Client(Index(entry)))
+        RegistryRelease entry;
+        using (var client = Client(Index(Entry()), [Release("0.0.1"), Release("0.0.2", true)]))
         {
             var list = await client.Fetch();
-            check(list.Count == 1 && list[0].Id == entry.Id, "registry v1 fetch and parse");
+            check(list.Count == 1 && list[0].Versions.Count == 2, "v2 groups released versions under one mod");
+            entry = list[0].Versions.Single(v => v.IsLatest);
+            check(entry.Version == "0.0.1" && list[0].Versions[0].Prerelease, "publisher latest is independent of numeric order and prereleases");
+            check(entry.Compatibility.GameVersions.Single() == "0.4.7f5", "compatibility is read from each release tag");
             var library = Path.Combine(root, "RegistryLibrary");
-            var package = await client.Download(list[0], library);
-            check(package.Manifest.Name == "FixtureMod" && package.Manifest.Version == "0.0.1", "download verifies ZIP then imports into library");
+            var package = await client.Download(entry, library);
+            check(package.Manifest.Version == "0.0.1", "release digest and package metadata verified before import");
             await client.Download(entry, library);
-            check(ModLibrary.List(library).Count == 1, "repeat registry download is idempotent");
+            check(ModLibrary.List(library).Count == 1, "repeated version download is idempotent");
         }
-        using (var client = Client("{\"schema_version\":2,\"mods\":[]}")) await Reject(async () => await client.Fetch(), "reject unsupported registry schema");
+        using (var client = Client("{\"schema_version\":1,\"mods\":[]}")) await Reject(async () => await client.Fetch(), "v1 is rejected without a compatibility fallback");
         using (var client = Client("invalid")) await Reject(async () => await client.Fetch(), "reject malformed registry JSON");
-        using (var client = new RegistryClient(new HttpClient(new StubHandler(request => new(request.RequestUri!.AbsoluteUri == RegistryClient.IndexUrl ? HttpStatusCode.ServiceUnavailable : HttpStatusCode.OK)
+        using (var client = Client(Index(Entry(), Entry()))) await Reject(async () => await client.Fetch(), "reject duplicate mod identities");
+        var sameName = Entry(); sameName.Id = "other-mod";
+        using (var client = Client(Index(Entry(), sameName))) await Reject(async () => await client.Fetch(), "reject duplicate package names");
+        var badSource = Entry(); badSource.ReleaseSource.CompatibilityPath = "../bad.json";
+        using (var client = Client(Index(badSource))) await Reject(async () => await client.Fetch(), "reject unsafe tagged metadata path");
+        using (var client = Client(Index(Entry()), [Release("0.0.1", url: "https://github.com/other/repo/releases/download/v0.0.1/FixtureMod.zip")]))
         {
-            RequestMessage = request, Content = new StringContent(Index(entry))
-        })))) check((await client.Fetch()).Single().Id == entry.Id, "fallback reads the same registry file when Contents API is unavailable");
-        using (var client = new RegistryClient(new HttpClient(new StubHandler(request => new(HttpStatusCode.OK)
+            var mod = (await client.Fetch()).Single();
+            check(mod.Versions.Count == 0 && mod.ReleaseError != null, "cross-repository asset is unavailable with an explanation");
+        }
+        using (var client = Client(Index(Entry()), [Release("0.0.1", digest: "")]))
+            check((await client.Fetch()).Single().ReleaseError != null, "missing release digest cannot bypass verification");
+        using (var client = Client(Index(Entry()), [Release("0.0.1")], latest: "v0.0.9"))
         {
-            RequestMessage = new HttpRequestMessage(HttpMethod.Get, "http://insecure.example/index.json"), Content = new StringContent(Index(entry))
-        })))) await Reject(async () => await client.Fetch(), "reject HTTPS downgrade on registry redirect");
-        using (var client = Client(Index(entry, entry))) await Reject(async () => await client.Fetch(), "reject duplicate registry ids");
-        var duplicateName = Entry(); duplicateName.Id = "different-id";
-        using (var client = Client(Index(entry, duplicateName))) await Reject(async () => await client.Fetch(), "reject duplicate package names");
-        var wrongUrl = Entry(); wrongUrl.DownloadUrl = "https://github.com/another/repo/releases/download/v0.0.1/FixtureMod.zip";
-        using (var client = Client(Index(wrongUrl))) await Reject(async () => await client.Fetch(), "reject package URL outside registered repository");
-        var wrongTag = Entry(); wrongTag.DownloadUrl = wrongTag.DownloadUrl.Replace("v0.0.1", "v0.0.2");
-        using (var client = Client(Index(wrongTag))) await Reject(async () => await client.Fetch(), "reject package URL with mismatched version tag");
-        var http = Entry(); http.DownloadUrl = http.DownloadUrl.Replace("https:", "http:");
-        using (var client = Client(Index(http))) await Reject(async () => await client.Fetch(), "reject non-HTTPS package URL");
-        var traversal = Entry(); traversal.DownloadUrl = traversal.DownloadUrl.Replace("FixtureMod.zip", "../FixtureMod.zip");
-        using (var client = Client(Index(traversal))) await Reject(async () => await client.Fetch(), "reject normalized traversal in release URL");
-        var wrongHash = Entry(); wrongHash.Sha256 = new string('0', 64);
+            var mod = (await client.Fetch()).Single();
+            check(!mod.Versions.Any(v => v.IsLatest) && mod.ReleaseError!.Contains("latest"), "missing latest never silently selects an older release");
+        }
+        using (var client = Client(Index(Entry()), compatibilityJson: "{}"))
+            check((await client.Fetch()).Single().Versions.Count == 0, "invalid tagged compatibility cannot become a downloadable release");
+        using (var client = Client(Index(Entry()), Enumerable.Range(1, 100).Select(n => Release("0.0." + n)).ToArray()))
+            check((await client.Fetch()).Single().Versions.Count == 100, "release discovery follows pagination through a full page");
+        using (var client = Client(Index(Entry()), [Release("0.0.1"), Release("0.0.2", digest: "invalid")]))
+        {
+            var mod = (await client.Fetch()).Single();
+            check(mod.Versions.Count == 1 && mod.Versions[0].IsLatest && mod.ReleaseError != null, "one invalid release preserves other valid versions with a warning");
+        }
+        using (var client = Client(Index(Entry()).Replace("\"release_source\"", "\"unknown_source\"")))
+            await Reject(async () => await client.Fetch(), "strict v2 metadata rejects unknown or missing discovery fields");
         var failedLibrary = Path.Combine(root, "RejectedRegistryLibrary");
-        using (var client = Client(Index(wrongHash))) await Reject(async () => await client.Download(wrongHash, failedLibrary), "reject archive SHA-256 mismatch");
-        var wrongSize = Entry(); wrongSize.SizeBytes++;
-        using (var client = Client(Index(wrongSize))) await Reject(async () => await client.Download(wrongSize, failedLibrary), "reject archive size mismatch");
-        var wrongIdentity = Entry(); wrongIdentity.PackageName = "OtherMod";
-        using (var client = Client(Index(wrongIdentity))) await Reject(async () => await client.Download(wrongIdentity, failedLibrary), "reject mismatched package manifest before library commit");
-        var wrongCompatibility = Entry(); wrongCompatibility.Compatibility.GameVersions = ["0.4.8f1"];
-        using (var client = Client(Index(wrongCompatibility))) await Reject(async () => await client.Download(wrongCompatibility, failedLibrary), "reject package compatibility differing from registry");
-        using (var client = Client(Index(entry), status: HttpStatusCode.NotFound)) await Reject(async () => await client.Fetch(), "report unavailable registry HTTP response");
-        using (var client = Client(Index(entry)))
+        using (var client = Client(Index(Entry()), payload: bytes.Concat(new byte[] { 0 }).ToArray()))
+            await Reject(async () => await client.Download(entry, failedLibrary), "reject download size mismatch");
+        var originalHash = entry.Sha256; entry.Sha256 = new string('0', 64);
+        using (var client = Client(Index(Entry()))) await Reject(async () => await client.Download(entry, failedLibrary), "reject SHA-256 mismatch");
+        entry.Sha256 = originalHash;
+        entry.Compatibility.GameVersions = ["0.4.8f1"];
+        using (var client = Client(Index(Entry()))) await Reject(async () => await client.Download(entry, failedLibrary), "reject package compatibility differing from tagged metadata");
+        entry.Compatibility.GameVersions = ["0.4.7f5"];
+        using (var client = Client(Index(Entry())))
         {
             using var cancellation = new CancellationTokenSource(); cancellation.Cancel();
-            await Reject(async () => await client.Download(entry, failedLibrary, cancellation.Token), "cancelled download does not install a mod");
+            await Reject(async () => await client.Download(entry, failedLibrary, cancellation.Token), "cancelled downloads leave no installation");
         }
-        check(!Directory.EnumerateFileSystemEntries(failedLibrary).Any(), "rejected downloads leave no package or temporary payload");
+        check(!Directory.EnumerateFileSystemEntries(failedLibrary).Any(), "failed downloads leave no package or temporary file");
         using (var client = Client(new string(' ', 1024 * 1024 + 1))) await Reject(async () => await client.Fetch(), "reject oversized registry response");
+    }
+    public static async Task LocalCatalogSmoke(string indexPath)
+    {
+        using var http = new HttpClient(new LocalIndexHandler(File.ReadAllText(indexPath))) { Timeout = TimeSpan.FromSeconds(90) };
+        using var registry = new RegistryClient(http);
+        var mods = await registry.Fetch();
+        var root = Path.Combine(Path.GetTempPath(), "ScheduleI-v2-smoke-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            foreach (var mod in mods)
+            {
+                if (mod.ReleaseError != null) throw new Exception(mod.Name + ": " + mod.ReleaseError);
+                if (!mod.Versions.Any(v => v.IsLatest)) throw new Exception("No latest release for " + mod.Name);
+                Console.WriteLine($"PASS live releases: {mod.Name}: {string.Join(", ", mod.Versions.Select(v => v.Label))}");
+                foreach (var version in mod.Versions)
+                {
+                    var package = await registry.Download(version, Path.Combine(root, "Library"));
+                    Console.WriteLine("PASS live verified package and tagged compatibility: " + package.Identity);
+                }
+            }
+            if (mods.Single(m => m.Id == "businesses").Versions.Count < 2) throw new Exception("Businesses history was not discovered.");
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
+    }
+    private sealed class LocalIndexHandler(string index) : DelegatingHandler(new HttpClientHandler())
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+            request.RequestUri!.AbsoluteUri == RegistryClient.IndexUrl
+                ? Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { RequestMessage = request, Content = new StringContent(index) })
+                : base.SendAsync(request, cancellationToken);
     }
     public static async Task RemoteSmoke()
     {
@@ -86,7 +129,7 @@ internal static class RegistryChecks
             using var client = new RegistryClient();
             var mods = await client.Fetch();
             var mod = mods.Single(m => m.Id == "businesses");
-            var package = await client.Download(mod, Path.Combine(root, "Library"));
+            var package = await client.Download(mod.Versions.Single(v => v.IsLatest), Path.Combine(root, "Library"));
             Console.WriteLine($"PASS live index -> {mod.Repository} -> verified {package.Identity}, DLL {package.Sha256}");
             var folder = Path.Combine(root, "GameFixture");
             Directory.CreateDirectory(folder);
@@ -108,7 +151,7 @@ internal static class RegistryChecks
         GameDetector.RequireStopped(game);
         ModLibrary.ValidateLibraryLocation(library, game.Folder);
         var mod = (await registry.Fetch()).Single(m => m.Id == "businesses");
-        var package = await registry.Download(mod, library);
+        var package = await registry.Download(mod.Versions.Single(v => v.IsLatest), library);
         var target = Path.Combine(game.Folder, "Mods", package.FileName);
         if (!File.Exists(target) || ModLibrary.Hash(target) != package.Sha256 || ModDeployment.Status(game, package) != "Enabled")
             throw new InvalidOperationException("Real round trip requires the already managed identical Businesses DLL. No game files changed.");

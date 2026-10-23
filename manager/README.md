@@ -1,22 +1,24 @@
-# Schedule I Mod Manager — prototype 0.1.3
+# Schedule I Mod Manager — prototype 0.1.5
 
 A Windows x64 desktop manager for local Schedule I mods. C# / .NET 10 / WPF; WiX creates the per-user MSI. The manager includes its own .NET runtime and ships without any mods or game files.
 
 ## Use
 
-Install `ScheduleIModManager-0.1.3-x64.msi`, then open **Schedule I Mod Manager** from Start. Alternatively extract the portable ZIP and run `ScheduleIModManager.exe`.
+Install `ScheduleIModManager-0.1.5-x64.msi`, then open **Schedule I Mod Manager** from Start. Alternatively extract the portable ZIP and run `ScheduleIModManager.exe`.
 
-1. Choose the folder containing `Schedule I.exe` and `Schedule I_Data`.
+1. In **Settings**, choose the folder containing `Schedule I.exe` and `Schedule I_Data`.
 
-2. Choose a separate mod library folder. **Save & detect** reads the game version, backend, loader and runtime status.
+2. Choose a separate mod library folder. **Save and check** reads the game version, backend, loader and runtime status.
 
-3. Open **Available mods** to read the [community registry](https://github.com/schedule-one-mods/schedule-one-mod-registry). Click **Download** beside a mod. The manager verifies its size, SHA-256, package identity and compatibility metadata before importing it into the local library. A fresh library starts empty; existing libraries are preserved during upgrades.
+3. Open **Browse mods** to read the [community registry](https://github.com/schedule-one-mods/schedule-one-mod-registry). Select a version (the publisher's **Latest** is selected initially), then click **Download**. Each version shows its tested game and loader versions. The manager verifies its size, SHA-256, package identity and compatibility metadata before importing it into the local library. A fresh library starts empty; existing libraries are preserved during upgrades.
 
-4. Click **Check requirements**. **Install missing requirements** downloads and installs Visual C++ x64, .NET 6 Desktop x64, then MelonLoader 0.7.3 as needed. Official downloads must match pinned sizes/checksums. Windows asks for administrator approval for Microsoft runtimes. Setup verifies each installation, shows progress, supports cancelling downloads, and keeps verified downloads for retries. If Windows requires a restart, restart and run setup again to finish remaining steps. There is no automatic reboot.
+4. In **Settings**, click **Check again**. **Install missing requirements** downloads and installs Visual C++ x64, .NET 6 Desktop x64, then MelonLoader 0.7.3 as needed. Official downloads must match pinned sizes/checksums. Windows asks for administrator approval for Microsoft runtimes. Setup verifies each installation, shows progress, supports cancelling downloads, and keeps verified downloads for retries. If Windows requires a restart, restart and run setup again to finish remaining steps. There is no automatic reboot.
 
-5. In **Installed mods**, **Enable** copies a downloaded package DLL into the game's `Mods` folder. **Disable** removes only the recorded, unchanged copy. **Adopt** manages an identical manually installed DLL. Close the game before changing mods. Downloads never enable a mod automatically.
+5. In **My mods**, **Enable** copies a downloaded package DLL into the game's `Mods` folder. **Disable** removes only the recorded, unchanged copy. **Adopt** manages an identical manually installed DLL. Close the game before changing mods. Downloads never enable a mod automatically.
 
 6. **Play Schedule I** checks managed mod compatibility and starts the selected executable. **Open loader log** opens `MelonLoader/Latest.log`.
+
+Blocking problems appear in a persistent banner across all three pages. Missing game folders, missing or damaged dependencies, restart requirements, library failures, and incompatible enabled mods keep Play disabled until resolved. Registry failures appear separately and leave downloaded mods usable. Settings contains the built-in setup and loader log viewers. Browse supports searching by mod name or author.
 
 Supported packages contain `manifest.json`, `compatibility.json`, and one `Mods/YourMod.dll`. The manager blocks unverified game/backend/loader combinations for managed mods. Other installed mods are not validated or modified. Publisher compatibility metadata records testing; actual gameplay testing remains necessary.
 
@@ -46,7 +48,7 @@ On Windows x64, install PowerShell 7 and .NET 10 SDK. From the repository root:
 
 ```
 
-No game installation, .NET 8 SDK, mod DLL or loader archive is needed. The script runs self-contained fixture checks, publishes the application, verifies that packages contain only manager files, and writes the portable ZIP, MSI and SHA-256 files under `artifacts/manager/releases/0.1.3`. WiX 6.0.2 installs locally under ignored `tools/wix`. Without `-Installer`, only the portable ZIP is built. A local SDK under `tools/dotnet` is used when available; GitHub Actions uses its configured SDK on PATH.
+No game installation, .NET 8 SDK, mod DLL or loader archive is needed. The script runs self-contained fixture checks, publishes the application, verifies that packages contain only manager files, and writes the portable ZIP, MSI and SHA-256 files under `artifacts/manager/releases/0.1.5`. WiX 6.0.2 installs locally under ignored `tools/wix`. Without `-Installer`, only the portable ZIP is built. A local SDK under `tools/dotnet` is used when available; GitHub Actions uses its configured SDK on PATH.
 
 `manager/Directory.Build.props` is the single version source for the application, title label, MSI, package filenames and GitHub Release tag. [Release instructions](RELEASING.md) explain automatic publication after pushing to `main`.
 
@@ -54,15 +56,21 @@ No game installation, .NET 8 SDK, mod DLL or loader archive is needed. The scrip
 
 The existing integration test target is Schedule I **0.4.7f5 / IL2CPP**, Windows x64, **MelonLoader 0.7.3**. Game versions are read from Unity's installed `globalgamemanagers`; ambiguous/missing versions are Unknown and fail compatibility checks. Mod package metadata provides its tested versions. Loader provisioning remains pinned to that game build until separately tested and updated.
 
-Mod authors publish their own versioned packages and maintain compatibility metadata independently of manager versions. The client reads schema v1 from `index.json` on the registry main branch, using GitHub Contents API with a raw-file fallback. Both URLs are fixed to the same registry file; no account or token is required. Installed mods remain usable if discovery is offline. Authors submit a registry PR; arbitrary repositories are not scanned. Each entry points to an exact versioned GitHub Release asset. Registry maintainers control discovery; the client still validates downloaded bytes and package metadata. Public development packages are unsigned; code signing can be added later.
+Mod authors register once in the schema-v2 directory and publish tagged GitHub Releases independently. The registry stores stable identities and a `release_source` policy, including `latest: github_latest`. Browse reads published releases directly and their compatibility JSON at each version tag; GitHub supplies package size and digest. Refresh discovers new versions without a registry PR or GitHub Actions job. Publisher compatibility is checked against package contents on download. Latest does not mean compatible. Prereleases remain explicit choices; malformed releases show an error. Downloaded mods remain available offline.
+
+**My mods** shows one row per mod with a downloaded-version selector. Keep several versions locally, select the enabled one to disable it, then enable another. Only one version per package identity may be enabled, including versions with different DLL filenames. **Delete version** removes the selected local version; **Delete whole mod** removes every downloaded version. Managed enabled copies are disabled first. Changed managed files block deletion until resolved. Browse continues listing registered mods after deletion. Future packs can pin stable identities, versions and digests; packs are not implemented by this change.
+
+The v2 index and manager must be released together. Schema v1 is rejected; there is no legacy schema reader. Registration delegates future release publication to the registered repository owner; future versions are not separately reviewed by the registry.
 
 ## Live registry check
+
+Local maintainers can build separate PR review tooling with `manager/build.ps1 -Maintainer`; the normal public build excludes its code and controls. Full instructions are in `manager/MAINTAINER.md` in the source repository.
 
 ```powershell
 dotnet run --project manager/tests/Manager.Checks -c Release -- --registry-smoke
 ```
 
-This fetches the real public index, downloads Businesses from its public release, verifies it, and exercises enable/disable/launch validation in an isolated installation fixture. It never uses a local Businesses ZIP or modifies your real game. Normal CI checks use fake HTTP responses so builds do not depend on live registry availability.
+This fetches the real public index, downloads Businesses from its public release, verifies it, and exercises enable/disable/launch validation in an isolated installation fixture. It never uses a local Businesses ZIP or modifies your real game. Normal automated checks use fake HTTP responses so builds do not depend on live registry availability.
 
 ## Requirements setup
 
@@ -84,3 +92,11 @@ dotnet run --project manager/tests/Manager.Checks -c Release -- --dependency-smo
 This optional check verifies official payloads and exercises fresh MelonLoader installation/missing-file repair in a disposable game directory. It uses verified cached downloads when available and never runs Microsoft installers or modifies your real game/system runtimes. Native installation/elevation/reboot behavior still needs a clean Windows VM acceptance test.
 
 Sources: [MelonLoader requirements](https://github.com/LavaGang/MelonWiki/blob/master/docs/gettingstarted.md), [official 0.7.3 release](https://github.com/LavaGang/MelonLoader/releases/tag/v0.7.3), [Microsoft installer options and exit codes](https://learn.microsoft.com/en-us/dotnet/core/install/windows#command-line-options).
+
+Before the v2 registry is published, test its local candidate against real public releases without changing any game files:
+
+```powershell
+./tools/dotnet/dotnet.exe run --project manager/tests/Manager.Checks -c Release -- --registry-v2-smoke D:/Projects/schedule-one-mod-registry/index.json
+```
+
+This discovers all registered release histories and verifies every discovered package in a temporary library, including Businesses 0.1.3 and 0.1.4.

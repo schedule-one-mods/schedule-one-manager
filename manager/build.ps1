@@ -1,5 +1,10 @@
-param([switch]$Installer)
+param([switch]$Installer, [switch]$Maintainer)
 $ErrorActionPreference = 'Stop'
+if ($Maintainer) {
+    if ($Installer) { throw 'Maintainer builds are local portable tools; do not publish them as the public MSI.' }
+    & (Join-Path $PSScriptRoot 'build-maintainer.ps1')
+    return
+}
 $repo = Split-Path $PSScriptRoot -Parent
 $dotnet = if ($env:GITHUB_ACTIONS -eq 'true') { (Get-Command dotnet -ErrorAction Stop).Source }
           elseif (Test-Path (Join-Path $repo 'tools\dotnet\dotnet.exe')) { Join-Path $repo 'tools\dotnet\dotnet.exe' }
@@ -18,9 +23,11 @@ foreach ($target in @($output, $releaseDir)) {
 }
 Push-Location $PSScriptRoot
 try {
-    & $dotnet run --project 'tests\Manager.Checks\Manager.Checks.csproj' -c Release
+    & $dotnet run --project 'tests\Manager.Checks\Manager.Checks.csproj' -c Release -p:MaintainerBuild=false
     if ($LASTEXITCODE -ne 0) { throw 'Manager checks failed.' }
-    & $dotnet publish 'src\Manager.Desktop\Manager.Desktop.csproj' -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None -p:DebugSymbols=false -o $output
+    & $dotnet run --project 'tests\Manager.Desktop.Checks\Manager.Desktop.Checks.csproj' -c Release -p:MaintainerBuild=false
+    if ($LASTEXITCODE -ne 0) { throw 'Desktop checks failed.' }
+    & $dotnet publish 'src\Manager.Desktop\Manager.Desktop.csproj' -c Release -r win-x64 --self-contained true -p:MaintainerBuild=false -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None -p:DebugSymbols=false -o $output
     if ($LASTEXITCODE -ne 0) { throw 'Publish failed.' }
 } finally { Pop-Location }
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'README.md') -Destination $output

@@ -4,7 +4,7 @@ namespace ScheduleI.Manager;
 
 public sealed class VerifiedDependencyDownloader : IDisposable
 {
-    public static string DefaultCache => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ScheduleIModManager", "Downloads");
+    public static string DefaultCache => Path.Combine(ManagerPaths.Root, "Downloads");
     private readonly HttpClient client;
     private readonly bool ownsClient;
     private readonly string cache;

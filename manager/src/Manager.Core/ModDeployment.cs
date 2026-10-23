@@ -16,7 +16,11 @@ public static class ModDeployment
     public static string CompatibilityIssue(GameInstallation game, LibraryPackage package)
     {
         if (game.Backend != package.Compatibility.Backend) return $"Requires {package.Compatibility.Backend}; game is {game.Backend}.";
-        if (!package.Compatibility.GameVersions.Contains(game.Version)) return $"Game {game.Version} is unverified. Tested: {string.Join(", ", package.Compatibility.GameVersions)}.";
+        if (
+#if MAINTAINER
+            !MaintainerCompatibility.AllowUnverifiedGameVersion &&
+#endif
+            !package.Compatibility.GameVersions.Contains(game.Version)) return $"Game {game.Version} is unverified. Tested: {string.Join(", ", package.Compatibility.GameVersions)}.";
         if (!package.Compatibility.Loader.Versions.Contains(game.LoaderVersion)) return $"Requires MelonLoader {string.Join(", ", package.Compatibility.Loader.Versions)}; found {game.LoaderVersion}.";
         if (!File.Exists(Path.Combine(game.Folder, "version.dll"))) return "MelonLoader bootstrap version.dll is missing.";
         if (!game.LoaderHealthy) return "MelonLoader is incomplete. Check requirements before enabling mods.";
@@ -29,6 +33,8 @@ public static class ModDeployment
     {
         var target = Target(game, package);
         var receipts = Receipts(game);
+        if (receipts.Values.Any(r => r.Package.StartsWith(package.Manifest.Name + "-", StringComparison.OrdinalIgnoreCase) && r.Package != package.Identity))
+            return "Another version enabled · disable it first";
         if (!File.Exists(target)) return "Disabled";
         var hash = ModLibrary.Hash(target);
         if (hash != package.Sha256) return "Another version / file conflict";
@@ -43,6 +49,8 @@ public static class ModDeployment
         if (ModLibrary.Hash(package.DllPath) != package.Sha256) throw new IOException("Library DLL changed; refresh the library.");
         var target = Target(game, package);
         var receipts = Receipts(game);
+        if (receipts.Values.Any(r => r.Package.StartsWith(package.Manifest.Name + "-", StringComparison.OrdinalIgnoreCase) && r.Package != package.Identity))
+            throw new IOException("Another version of this mod is enabled. Select and disable it before enabling this version.");
         if (File.Exists(target) && ModLibrary.Hash(target) != package.Sha256) throw new IOException("A different DLL already occupies " + target + ". Disable its managed version first; external files are never overwritten.");
         Directory.CreateDirectory(Path.GetDirectoryName(target)!);
         var created = false;
@@ -76,6 +84,14 @@ public static class ModDeployment
         try { receipts.Remove(package.FileName); JsonFiles.Write(ReceiptPath(game), receipts); }
         catch { if (moved) File.Move(backup, target); throw; }
         if (moved) File.Delete(backup);
+    }
+    public static void RequireDeletable(GameInstallation game, LibraryPackage package)
+    {
+        var receipts = Receipts(game);
+        var owned = receipts.Values.Any(r => r.Package == package.Identity);
+        if (!owned) return;
+        GameDetector.RequireStopped(game);
+        if (Status(game, package) != "Enabled") throw new IOException("Repair or disable the changed managed deployment before deleting its library version.");
     }
     public static void ValidateLaunch(GameInstallation game, IEnumerable<LibraryPackage> packages)
     {

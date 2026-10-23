@@ -8,6 +8,9 @@
     <AssemblyName>ScheduleIModManager</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(MaintainerBuild)' == 'true'">
+    <AssemblyName>ScheduleIModManager.Maintainer</AssemblyName>
+  </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../Manager.Core/Manager.Core.csproj" />
   </ItemGroup>

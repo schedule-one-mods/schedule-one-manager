@@ -79,6 +79,28 @@ public static partial class ModLibrary
         }
         finally { if (Directory.Exists(stage)) Directory.Delete(stage, true); }
     }
+    public static void Delete(string library, IEnumerable<LibraryPackage> packages, GameInstallation? game = null)
+    {
+        var root = Path.GetFullPath(library).TrimEnd(Path.DirectorySeparatorChar);
+        RejectLinks(root);
+        var targets = packages.Select(p => Read(p.Directory)).ToArray();
+        // Preflight every target before disabling or removing any version.
+        foreach (var package in targets)
+        {
+            var path = Path.GetFullPath(package.Directory);
+            if (!string.Equals(Path.GetDirectoryName(path), root, StringComparison.OrdinalIgnoreCase) ||
+                !string.Equals(Path.GetFileName(path), package.Identity, StringComparison.Ordinal))
+                throw new IOException("Only package folders directly inside the selected library can be deleted.");
+            foreach (var entry in Directory.EnumerateFileSystemEntries(path, "*", SearchOption.AllDirectories))
+                if ((File.GetAttributes(entry) & FileAttributes.ReparsePoint) != 0) throw new IOException("Linked package contents cannot be deleted.");
+            if (game != null) ModDeployment.RequireDeletable(game, package);
+        }
+        foreach (var package in targets)
+        {
+            if (game != null && ModDeployment.Status(game, package) == "Enabled") ModDeployment.Disable(game, package);
+            Directory.Delete(Path.GetFullPath(package.Directory), true);
+        }
+    }
     [GeneratedRegex(@"^[A-Za-z][A-Za-z0-9_]{0,63}$")] private static partial Regex SafeName();
     [GeneratedRegex(@"^\d+\.\d+\.\d+$")] private static partial Regex SafeVersion();
 }

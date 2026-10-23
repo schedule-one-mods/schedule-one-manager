@@ -5,7 +5,7 @@ namespace ScheduleI.Manager;
 
 public sealed class DependencySetupService : IDisposable
 {
-    public static string LogDirectory => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ScheduleIModManager", "Logs");
+    public static string LogDirectory => Path.Combine(ManagerPaths.Root, "Logs");
     private readonly VerifiedDependencyDownloader downloader;
     private readonly Func<string, GameInstallation> detect;
     private readonly Func<string, string, string, Task<int>> installMicrosoft;

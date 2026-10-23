@@ -1,6 +1,19 @@
 using System.IO.Compression;
 using ScheduleI.Manager;
 
+#if MAINTAINER
+if (args.FirstOrDefault() == "--launch-fixture")
+{
+    if (args[2] != "no-log") File.WriteAllText(args[1], args[2] + Guid.NewGuid());
+    await Task.Delay(int.Parse(args[3])); Environment.Exit(int.Parse(args[4])); return;
+}
+if (args.FirstOrDefault() == "--review-smoke")
+{
+    if (args.Length != 3) throw new ArgumentException("Pass --review-smoke <registry PR URL> <evidence directory>.");
+    await MaintainerChecks.RemoteSmoke(args[1], args[2]); return;
+}
+#endif
+if (args.FirstOrDefault() == "--registry-v2-smoke") { await RegistryChecks.LocalCatalogSmoke(args[1]); return; }
 if (args.FirstOrDefault() == "--registry-smoke") { await RegistryChecks.RemoteSmoke(); return; }
 if (args.FirstOrDefault() == "--dependency-smoke") { await DependencyChecks.RemoteSmoke(); return; }
 if (args.FirstOrDefault() == "--registry-real-smoke")
@@ -17,6 +30,12 @@ void Check(bool condition, string name) { if (!condition) throw new Exception("F
 void Reject(Action action, string name) { try { action(); } catch (Exception e) when (e is IOException or InvalidDataException or InvalidOperationException or System.Text.Json.JsonException) { Check(true, name); return; } throw new Exception("Expected rejection: " + name); }
 try
 {
+#if MAINTAINER
+    await MaintainerChecks.Run(root, Check);
+#else
+    Check(typeof(RegistryClient).Assembly.GetTypes().All(t => !t.Name.StartsWith("Maintainer") && t.Name is not ("RegistryReview" or "ReviewEvidence" or "LaunchObservation" or "LaunchCase")), "public core excludes maintainer resolver, override, evidence and runner types");
+    Check(Path.GetFileName(ManagerPaths.Root) == "ScheduleIModManager", "public data profile unchanged");
+#endif
     var library = Path.Combine(root, "Library");
     var folder = Path.Combine(root, "Game");
     Directory.CreateDirectory(Path.Combine(folder, "Schedule I_Data", "il2cpp_data", "Metadata"));
@@ -77,6 +96,28 @@ try
     ModDeployment.Enable(game, package);
     ModDeployment.Disable(game, package);
     Check(!File.Exists(target), "adopt then disable external identical mod");
+    var deleteLibrary = Path.Combine(root, "DeleteLibrary");
+    var first = ModLibrary.Import(fixtureZip, deleteLibrary);
+    var secondFolder = Path.Combine(deleteLibrary, "FixtureMod-0.0.2");
+    Directory.CreateDirectory(Path.Combine(secondFolder, "Mods"));
+    File.Copy(first.DllPath, Path.Combine(secondFolder, "Mods", "DifferentFileName.dll"));
+    JsonFiles.Write(Path.Combine(secondFolder, "manifest.json"), new PackageManifest { Name = "FixtureMod", Version = "0.0.2" });
+    JsonFiles.Write(Path.Combine(secondFolder, "compatibility.json"), first.Compatibility);
+    var second = ModLibrary.Read(secondFolder);
+    ModDeployment.Enable(game, first);
+    Reject(() => ModDeployment.Enable(game, second), "one enabled mod version even if DLL filenames differ");
+    Reject(() => ModLibrary.Delete(deleteLibrary, [package], game), "delete rejects packages outside its library");
+    var deleteTarget = Path.Combine(game.Folder, "Mods", first.FileName);
+    File.AppendAllText(deleteTarget, "changed");
+    Reject(() => ModLibrary.Delete(deleteLibrary, [first, second], game), "changed managed deployment blocks whole-mod deletion before removing any version");
+    Check(Directory.Exists(secondFolder), "failed deletion preflight preserves other downloaded versions");
+    File.Copy(first.DllPath, deleteTarget, true);
+    ModLibrary.Delete(deleteLibrary, [first], game);
+    Check(!Directory.Exists(first.Directory) && Directory.Exists(secondFolder) && !File.Exists(deleteTarget), "delete selected version disables its managed copy and preserves other versions");
+    ModDeployment.ValidateLaunch(game, [second]);
+    ModLibrary.Import(fixtureZip, deleteLibrary);
+    ModLibrary.Delete(deleteLibrary, ModLibrary.List(deleteLibrary), game);
+    Check(ModLibrary.List(deleteLibrary).Count == 0, "delete whole mod removes all downloaded versions");
     if (args.Length > 1)
     {
         var real = GameDetector.Detect(args[1]);

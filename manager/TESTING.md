@@ -1,5 +1,11 @@
 # Validation
 
+## Maintainer PR review
+
+`manager/build.ps1 -Maintainer` creates a separate local executable and runs offline checks for PR head/fork resolution, commit-pinned API/raw fallback, isolated profiles, version-override boundaries, exact launch combinations, cancellation/failure recovery and changed-file restoration failures. WPF checks cover the maintainer identity, version override, enable and launch behavior. Public builds explicitly disable the feature and assert that the maintainer core types and desktop entry points are absent. See [MAINTAINER.md](MAINTAINER.md) for usage and launch-observation limitations.
+
+The live PR fetch/download check against registry PR #1 at `8300cdb330d33eb0c73d09d8d748ee9832f6aaf1` fetched that commit's index (SHA-256 `751bcab52744887e2fc15e948a6cf07e17414ecaaa9025913ef84f328252850f`) and downloaded/verified Businesses 0.1.3 and DealLocations 0.1.3 from their registered release URLs. No game was launched or modified. Actual process observation on a real game remains an acceptance check; disposable helper processes cover actual observation, early/late exits, log freshness, error markers, cancellation and owned-process cleanup.
+
 ## Automated checks for 0.1.3
 
 `manager/build.ps1 -Installer` runs 96 offline checks using a temporary PE fixture and fake HTTP responses. No game, Businesses source or real network access is required in CI. Checks cover local package import, ZIP traversal, compatibility, enable/disable/adoption, file ownership, changed DLL conflicts and launch validation, plus registry parsing, unsupported schema, duplicate identities, repository/tag URL binding, HTTP failures, API fallback, insecure redirects, index size limits, download SHA-256/size, package identity/compatibility mismatches, cancellation and temporary-file cleanup.
@@ -59,3 +65,25 @@ The real runtime installation initially returned 1622 after elevation. Its nativ
 ## Mod controls acceptance preparation (unreleased)
 
 The manager now opens Installed mods on startup when the library contains packages, shows enabled counts for the next launch, and identifies the mod and resulting state after a toggle. Existing Enable/Disable controls and running-game guards are retained. All 96 checks and release packaging passed. On the selected real game, MelonLoader files were initially absent despite the historical successful setup log; the existing setup service restored them from the checksum-verified cache. Businesses was disabled (deployed DLL absent, library preserved, launch validation passed), then enabled with its original checksum and launch validation passed. The MSI updated successfully (exit 0), its installed EXE matched the build, and the manager reopened. Businesses is left enabled for the user's enabled/disabled gameplay launch tests. No game was launched by this validation. Changes remain local and uncommitted.
+
+## Three-page UI (0.1.5 development)
+
+The working 0.1.4 checkpoint is commit 64e9a7a. The UI revision separates My mods, Browse mods with search/download, and Settings with folders, requirements and diagnostics. Global banners are independent of page navigation and activity messages. Eleven isolated WPF desktop checks cover page navigation, missing-game/runtime/library/loader notices, restart requirements, verification failures, launch blocking during checks, and clearing a resolved blocker. These checks do not show a window, load user settings, fetch the registry or modify real game files. They run in build.ps1 alongside the 96 core checks. Native desktop inspection confirmed the three pages, real Businesses enabled state, successful registry listing, and requirement status. The revised UI remains uncommitted.
+
+The final 0.1.5 MSI installed locally with exit 0; the installed executable matches the packaged build and was reopened for review. All 107 checks (96 core plus 11 desktop) and package verification passed. Search and its empty state were also exercised through the native desktop UI. No remote push or UI commit was performed.
+
+## Disabled mod compatibility explanation (0.1.5 development)
+
+Investigation of the running manager found Steam game 0.4.7f12 and Businesses metadata tested only for 0.4.7f5. Enable was deliberately disabled by compatibility checks. Added a persistent notice for incompatible disabled mods, a Blocked action with a disabled-control tooltip, and explicit Play without mods wording when the downloaded library has no enabled mods. Six additional desktop checks cover blocked reasons, the notice, launch wording, clearing it for a supported game, and actual fixture enable/disable UI state changes. All 113 checks (96 core plus 17 desktop), MSI packaging and checksum validation passed. Installed the local MSI with exit 0 and verified its binary hash. Native inspection confirmed the compatibility notice for the selected Steam folder and library. No compatibility metadata was expanded and no game was launched. Changes remain uncommitted.
+
+## Registry v2 and downloaded versions
+
+Offline core checks cover grouped release histories, publisher-selected Latest independent of sort order, explicit prereleases, per-tag compatibility, pagination, invalid-release isolation, strict schema fields, asset binding/digest verification and failed-import cleanup. Deletion checks use isolated libraries and game fixtures: one version/all versions, outside-library rejection, changed managed deployment preservation, preflight before mutation, managed disable-before-delete and one-enabled-version enforcement even when DLL names differ.
+
+WPF checks cover one row per mod, version-specific actions, a separate whole-mod target, Latest selection/label, older-version selection and selection preservation after redraw. Both public and maintainer editions are checked. Visual previews can be rendered without loading real settings:
+
+```powershell
+./tools/dotnet/dotnet.exe run --project manager/tests/Manager.Desktop.Checks -c Release -p:MaintainerBuild=false -- --version-preview "D:/Projects/Schedule 1 Game/artifacts/manager/versioning-preview"
+```
+
+The live `--registry-v2-smoke <local index path>` command resolves the candidate directory against GitHub and verifies every discovered package in a temporary library. It does not launch the game or change real settings/deployments. The six current releases (Businesses 0.1.3/0.1.4, Deal Locations 0.1.3/0.1.4, Special Mixing Terminal 0.5.2/0.5.3) passed this check during implementation. No game compatibility claims beyond their publisher metadata are inferred by this smoke test.

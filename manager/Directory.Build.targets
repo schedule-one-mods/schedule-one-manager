@@ -1,0 +1,6 @@
+<Project>
+  <!-- Remove after SDK default Compile items have been included. -->
+  <ItemGroup Condition="'$(MaintainerBuild)' != 'true'">
+    <Compile Remove="**/Maintainer*.cs" />
+  </ItemGroup>
+</Project>
